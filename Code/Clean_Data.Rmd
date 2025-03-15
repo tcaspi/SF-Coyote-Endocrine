@@ -1,0 +1,158 @@
+---
+title: "Clean_Data"
+author: "Tali Caspi"
+date: "2025-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+```
+
+Clean raw endocrine data by:
+
+1) Generating the original sample field IDs for merging with the environmental metadata
+2) Merging to the scat metadata and correct individual ID information
+3) Removing any non-coyote samples
+4) Joining diet data
+
+```{r}
+# Load hormone data and format dates
+data <- read_csv("Data/Hormone_Data.csv")
+data <- as_tibble(data)
+data$Date <- mdy(data$Date)# reformat Date column into lubridate format
+data$Date <- gsub("-","",data$Date) #remove hyphens from date
+data <- data %>% 
+        mutate(FieldID = paste(Date, Collector, Number, sep = "-")) #generate correct field ID
+
+# Load scat metadata
+metadata <- read_csv("Data/All_Metadata.csv")
+metadata <- metadata %>% 
+  filter(Replicate != "Yes redo") %>%  #remove duplicate columns
+  mutate(SampleID = gsub("^R(S\\d{2}_\\d{4})", "\\1", SampleID)) %>% # fix samples with "R"
+  select(-c(Replicate, Initials))  #remove unnecessary columns
+
+head(metadata)
+
+# Load sample individual IDs and merge to metadata
+IDs <- read.csv("Data/Individual_IDs.csv")
+metadata_ids <- left_join(metadata, IDs, by="SampleID")
+
+# Add sex and family group information
+families <- read.csv("Data/Family_Data.csv")
+metadata_ids <- left_join(metadata_ids, families, by="Individual")
+
+# Add metadata and ID info to the hormone data
+merged <- left_join(data, metadata_ids, by="FieldID") 
+nrow(merged) # 772 samples
+
+# Clean data by removing raccoon and dog samples
+cleaned_data <- merged %>% # 772 samples
+  filter(is.na(Cytb_Sp) | !(Cytb_Sp %in% c("dog", "raccoon"))) %>%
+  filter(is.na(Geno.Sp) | Geno.Sp != "dog")
+
+nrow(cleaned_data) # 768 samples
+
+# Define territories and seasons
+hormones_clean <- cleaned_data %>% 
+  mutate(Territory = case_when(
+    Site == "BERN" | Site == "STMA" ~ "Bernal",
+    Site == "GLEN" | Site == "LAGU" | Site == "TWIN" | Site == "MTDA" | Site == "GGHP" ~ "Glen",
+    Site == "SFGC" | Site == "OLYM" | Site == "LAKE" | Site == "FTFU" ~ "Merced",
+    Site == "BVP" | Site == "CHP" ~ "Corona",
+    Site == "TGPH" | Site == "HYDE" | Site == "FORT" ~ "Coit",
+    Site == "GGPE" ~ "GGP - East",
+    Site == "GGPW" | Site == "GGP" ~ "GGP - West",
+    Site == "LEND" | Site == "LAFY" ~ "Land's End",
+    Site == "MCLA" ~ "McLaren",
+    Site == "PRES" ~ "Presidio",
+    Site == "STFA" ~ "St. Francis",
+    Site == "SUNS" ~ "Sunset Res",
+    Site == "STGV" ~ "Stern Grove")) %>% 
+  mutate(biol.season = case_when(
+    Month == 3 | Month == 4 | Month == 5 | Month == 6 ~ "Pupping",
+    Month == 7 | Month == 8 | Month == 9 | Month == 10 ~ "Dispersal",
+    Month == 11 | Month == 12 | Month == 1 | Month == 2 ~ "Mating"
+  )) %>% 
+  mutate(season = case_when(
+    Month == 5 | Month == 6 | Month == 7 | Month == 8 | Month == 9 | Month == 10 ~ "Dry",
+    Month == 11 | Month == 12 | Month == 1 | Month == 2 | Month == 3 | Month == 4  ~ "Wet"
+  )) %>% 
+  select(-c(Number, Date, Area)) %>%  
+  relocate("SampleID", .after="Code") %>% relocate("FieldID", .after="SampleID") %>%
+  relocate("Territory", .after="Site") %>% 
+  relocate("season", .after="Day") %>% relocate("biol.season", .after="season") %>% 
+  
+  # indicate outliers by changing them to NA values
+  mutate(T3 = if_else(T3 >2000 | T3 <1, NA_real_, T3),
+         T4 = if_else(T4 >1000, NA_real_, T4),
+         GC = if_else(GC >1400, NA_real_, GC)) %>% 
+  
+  # add log values for hormone concentrations
+  mutate(logT3 = log(T3),
+         logT4 = log(T4),
+         logGC = log(GC)) %>% 
+  relocate(logT3, .after = GC) %>% 
+  relocate(logT4, .after = logT3) %>% 
+  relocate(logGC, .after = logT4)
+
+# Load diet data from Caspi et al. (2025)
+diet <- read.csv("Data/func.RRA.clean.csv") %>% 
+  select(c(SampleID, Anthropogenic))
+
+# Make data frame with all hormone samples and diet
+hormones_diet <- inner_join(hormones_clean, diet, by="SampleID")
+
+# Write to CSV
+write.csv(hormones_diet, "Cleaned_Data/clean_hormone_all_diet.csv", row.names=F)
+
+# Make data frame of only samples with genotypes
+hormones_geno_diet <- hormones_clean %>% 
+  filter(!is.na(Individual)) %>% 
+  filter(!is.na(Sex)) %>% 
+  inner_join(diet, by="SampleID")
+
+#Write to CSV
+write.csv(hormones_geno_diet, "Cleaned_Data/clean_hormone_genotypes_diet.csv", row.names=F)
+```
+
+# Summary Statistics
+
+```{r}
+# Number of samples
+nrow(hormones_diet) # 423 samples total with diet and endocrine data
+nrow(hormones_geno_diet) # 318 samples of these samples have genotypes
+
+# Check for outliers
+table(is.na(hormones_diet$GC)) # one outlier
+table(is.na(hormones_diet$T3)) # no outliers
+table(is.na(hormones_diet$T4)) # no outliers
+
+# Means, SD, and range
+hormones_diet %>%
+  summarize(meanGC = round(mean(GC, na.rm = TRUE), 2),
+            sdGC = round(sd(GC, na.rm = TRUE), 2),
+            minGC = round(min(GC, na.rm=TRUE),2),
+            maxGC = round(max(GC, na.rm=TRUE),5),
+            meanT3 = round(mean(T3, na.rm = TRUE), 2),
+            sdT3 = round(sd(T3, na.rm = TRUE), 2),
+            minT3 = round(min(T3),2),
+            maxT3 = round(max(T3),6),
+            meanT4 = round(mean(T4, na.rm = TRUE), 2),
+            sdT4 = round(sd(T4, na.rm = TRUE), 2),
+            minT4 = round(min(T4),2),
+            maxT4 = round(max(T4),6))
+
+# Sex table
+hormones_geno_diet %>% distinct(Individual, Sex) %>% count(Sex) # 34 females, 40 males
+
+# Breeding status table
+hormones_geno_diet %>% distinct(Individual, Breeder) %>% count(Breeder) # 22 breeders, 52 non-breeders
+```
+
+
+
+
