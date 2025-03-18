@@ -72,19 +72,15 @@ hormones_clean <- cleaned_data %>%
     Site == "STFA" ~ "St. Francis",
     Site == "SUNS" ~ "Sunset Res",
     Site == "STGV" ~ "Stern Grove")) %>% 
-  mutate(biol.season = case_when(
+  mutate(Biol.Season = case_when(
     Month == 3 | Month == 4 | Month == 5 | Month == 6 ~ "Pupping",
     Month == 7 | Month == 8 | Month == 9 | Month == 10 ~ "Dispersal",
     Month == 11 | Month == 12 | Month == 1 | Month == 2 ~ "Mating"
   )) %>% 
-  mutate(season = case_when(
-    Month == 5 | Month == 6 | Month == 7 | Month == 8 | Month == 9 | Month == 10 ~ "Dry",
-    Month == 11 | Month == 12 | Month == 1 | Month == 2 | Month == 3 | Month == 4  ~ "Wet"
-  )) %>% 
   select(-c(Number, Date, Area)) %>%  
   relocate("SampleID", .after="Code") %>% relocate("FieldID", .after="SampleID") %>%
   relocate("Territory", .after="Site") %>% 
-  relocate("season", .after="Day") %>% relocate("biol.season", .after="season") %>% 
+  relocate("Biol.Season", .after="Territory") %>% 
   
   # indicate outliers by changing them to NA values
   mutate(T3 = if_else(T3 >2000 | T3 <1, NA_real_, T3),

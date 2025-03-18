@@ -1,0 +1,1121 @@
+---
+title: "Mixed_Effect_Models"
+author: "Tali Caspi"
+date: "2025-03-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(tidyverse); library(brms); library(tidybayes); library(bayesplot); library(DHARMa.helpers); library(DHARMa); library(plotrix); library(parallel); library(coda); library(ggpubr); library(bayestestR); library(ggcorrplot); library(marginaleffects); library(purrr); library(emmeans)
+
+
+# Make custom theme
+theme_custom <- function() {
+  theme_default() +
+  theme(panel.grid.minor = element_blank(),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.title = element_text(size = 7),
+        strip.background = element_rect(fill = "grey80", color = NA),
+        axis.text.y = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.title.y = element_text(size=10),
+        axis.title.x = element_text(size=10),
+        legend.background = element_rect(fill = "white", color = NA))}
+```
+
+
+# Prepare Data
+
+```{r}
+# Load data frames
+hormones_geno <- read.csv("Cleaned_Data/clean_hormone_genotypes_diet.csv")
+covs <- read.csv("Data/Territory_Covariates.csv")
+
+# Remove scats collected in non-established territories
+sites.to.drop <- c("Stern Grove", "Sunset Res")
+
+# Create data frame for DHGLM models (5 or more samples per individual)
+dhglm_df <- hormones_geno %>% 
+  mutate(Breeder = if_else(Breeder == "", "No", Breeder))%>% 
+  filter(!Territory %in% sites.to.drop) %>% 
+  group_by(Individual) %>% 
+  add_count %>% 
+  ungroup() %>% 
+  filter(n >= 5) %>%  # only keep individuals with 5 or more samples 
+  filter(Individual != "SFCoy31") %>% # remove SFCoy31 with bad sapmple representation
+  left_join(covs, by="Territory") %>%  # add covariate data
+  # select relevant covs
+  select(SampleID, GC, T3, T4, Year, Month, Day, Biol.Season, Territory, Condition,
+         Individual, Sex, Breeder, Anthropogenic, ISA, n)
+
+# create data frame for GC without the NA values from the outlier sample
+dhglm_df_GC <- dhglm_df %>% filter(SampleID != "S21_0009")
+
+# Create data frame for GLMM models (all samples with genotypes)
+glmm_df <- hormones_geno %>%
+  
+  # change NA's to No in breeding status
+  mutate(Breeder = if_else(Breeder == "", "No", Breeder))%>% 
+  
+  # select only relevant data columns
+  select(c(SampleID, Individual, Sex, Breeder, Month, Biol.Season, Territory, Condition, Anthropogenic, GC, T3, T4)) %>% 
+  
+  # add environmental covariates
+  left_join(covs, by="Territory") %>% 
+  filter(!Territory %in% sites.to.drop)
+
+# make data frame for GC model without the NA from the outlier
+glmm_df_GC <- glmm_df %>% filter(SampleID != "S21_0009")
+
+## sample breakdown ##
+nrow(dhglm_df_GC) # 207 samples
+nrow(dhglm_df) # 208 samples
+sort(table(dhglm_df$Individual)) # range 5 - 15 samples
+length(unique(dhglm_df$Individual)) # 25 individuals
+dhglm_df %>% distinct(Individual, Sex) %>% count(Sex) # 13 females, 12 males
+dhglm_df %>% distinct(Individual, Breeder) %>% count(Breeder) # 13 breeders, 12 non-breeders
+
+
+nrow(glmm_df_GC) # 308 samples
+nrow(glmm_df) # 309 samples
+length(unique(glmm_df$Individual)) # 74 individuals
+glmm_df %>% distinct(Individual, Sex) %>% count(Sex) # 34 females, 40 males
+glmm_df %>% distinct(Individual, Breeder) %>% count(Breeder) # 22 breeders, 52 non-breeders
+```
+
+# Assess correlation among potential covariates
+
+```{r}
+covariate_columns <- c("ISA", "Urban", "Pop.Den.2020", "Housing.Den.2020", "Anthropogenic")
+
+covariate_data <- glmm_df %>% select(all_of(covariate_columns))
+
+cor_matrix <- cor(covariate_data, use = "pairwise.complete.obs")
+ggcorrplot(cor_matrix, 
+           method = "circle",
+           type = "lower",    
+           lab = TRUE,      
+           lab_size = 3,      
+           colors = c("red", "white", "blue"))
+```
+
+# Population-level effects
+
+## Glucocorticoids
+
+### Construct models
+
+```{r}
+my.cores <- detectCores()
+
+# DHGLM
+dhglm_GC_formula <- bf(GC ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                     scale(ISA) + Condition + (1 |Individual),
+                     sigma ~ (1|Individual))
+
+dhglm_GC <- brm(dhglm_GC_formula,
+                        family="lognormal",
+                        data   = dhglm_df_GC, 
+                        warmup = 1000, iter = 5000, thin=2,
+                        chains = 4, 
+                        seed = 666,
+                        cores  = my.cores)
+
+# GLMM
+glmm_GC <- brm(GC ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                 scale(ISA) + Condition + (1|Individual), 
+                    data = glmm_df_GC, 
+                    family = "lognormal", 
+                    warmup = 1000, iter = 5000, thin=2,
+                    chains = 4, cores = my.cores,
+                    seed = 12345)
+
+
+# Save models
+saveRDS(dhglm_GC, "Model_Output/dhglm_GC.rds")
+saveRDS(glmm_GC, "Model_Output/glmm_GC.rds")
+
+# Load models
+dhglm_GC <- readRDS("Model_Output/dhglm_GC.rds")
+glmm_GC <- readRDS("Model_Output/glmm_GC.rds")
+```
+
+### Assess model fit
+
+```{r}
+# posterior predictive check
+pp_check(dhglm_GC, ndraws=100)
+pp_check(glmm_GC, ndraws=100)
+
+# dharma
+dh_check_brms(dhglm_GC)
+dh_check_brms(glmm_GC)
+```
+
+### Calculate R2
+
+```{r}
+performance::r2_bayes(dhglm_GC)
+performance::r2_bayes(glmm_GC)
+```
+
+### Calculate contrasts and test for pairwise significance
+
+```{r}
+# Average marginal contrasts - change significance level as needed
+comparisons_list <- list(
+  list(variables = list(Anthropogenic = c(0, 1))),
+  list(variables = list(ISA = c(0, 100))),
+  list(variables = "Breeder"),
+  list(variables = "Sex", by = "Biol.Season"))
+
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_GC, conf_level = 0.95), .x)))
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_GC, conf_level = 0.95), .x)))
+
+# Test significance of season differences 
+dhglm_GC %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+glmm_GC %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+
+# Test significance of sex within each season
+dhglm_GC %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+glmm_GC %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+
+# Test significance of breeding status
+dhglm_GC %>% emmeans(pairwise ~ Breeder, level=0.95)
+glmm_GC %>% emmeans(pairwise ~ Breeder, level=0.95)
+```
+
+## T3
+
+### Construct models
+
+```{r}
+# DHGLM
+dhglm_T3_formula <- bf(T3 ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                     scale(ISA) + Condition + (1 |Individual),
+                     sigma ~ (1|Individual))
+
+dhglm_T3 <- brm(dhglm_T3_formula,
+                        family="lognormal",
+                        data   = dhglm_df, 
+                        warmup = 1000, iter = 5000, thin=2,
+                        chains = 4, 
+                        seed = 666,
+                        cores  = my.cores)
+
+# GLMM
+glmm_T3 <- brm(T3 ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                 scale(ISA) + Condition + (1|Individual), 
+                    data = glmm_df, 
+                    family = "lognormal", 
+                    warmup = 1000, iter = 5000, thin=2,
+                    chains = 4, cores = my.cores,
+                    seed = 12345)
+
+
+# Save models
+saveRDS(dhglm_T3, "Model_Output/dhglm_T3.rds")
+saveRDS(glmm_T3, "Model_Output/glmm_T3.rds")
+
+# Load models
+dhglm_T3 <- readRDS("Model_Output/dhglm_T3.rds")
+glmm_T3 <- readRDS("Model_Output/glmm_T3.rds")
+```
+
+### Assess model fit
+
+```{r}
+# posterior predictive check
+pp_check(dhglm_T3, ndraws=100)
+pp_check(glmm_T3, ndraws=100)
+
+# dharma
+dh_check_brms(dhglm_T3)
+dh_check_brms(glmm_T3)
+```
+
+### Calculate R2
+
+```{r}
+performance::r2_bayes(dhglm_T3)
+performance::r2_bayes(glmm_T3)
+```
+
+### Calculate contrasts and test for pairwise significance
+
+```{r}
+# Average marginal contrasts - change significance level as needed
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T3, conf_level = 0.95), .x)))
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T3, conf_level = 0.95), .x)))
+
+# Test significance of differences between seasons
+dhglm_T3 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+glmm_T3 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+
+# Test significance of sex within each season
+dhglm_T3 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+glmm_T3 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+
+# Test significance of breeding status
+dhglm_T3 %>% emmeans(pairwise ~ Breeder, level=0.95)
+glmm_T3 %>% emmeans(pairwise ~ Breeder, level=0.95)
+```
+
+## T4
+
+### Construct models
+
+```{r}
+# DHGLM
+dhglm_T4_formula <- bf(T4 ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                     scale(ISA) + Condition + (1 |Individual),
+                     sigma ~ (1|Individual))
+
+dhglm_T4 <- brm(dhglm_T4_formula,
+                        family="lognormal",
+                        data   = dhglm_df, 
+                        warmup = 1000, iter = 5000, thin=2,
+                        chains = 4, 
+                        seed = 666,
+                        cores  = my.cores)
+
+# GLMM
+glmm_T4 <- brm(T4 ~ Biol.Season * Sex + scale(Anthropogenic) + Breeder + 
+                 scale(ISA) + Condition + (1|Individual), 
+                    data = glmm_df, 
+                    family = "lognormal", 
+                    warmup = 1000, iter = 5000, thin=2,
+                    chains = 4, cores = my.cores,
+                    seed = 12345)
+
+
+# Save models
+saveRDS(dhglm_T4, "Model_Output/dhglm_T4.rds")
+saveRDS(glmm_T4, "Model_Output/glmm_T4.rds")
+
+# Load models
+dhglm_T4 <- readRDS("Model_Output/dhglm_T4.rds")
+glmm_T4 <- readRDS("Model_Output/glmm_T4.rds")
+```
+
+### Assess model fit
+
+```{r}
+# posterior predictive check
+pp_check(dhglm_T4, ndraws=100)
+pp_check(glmm_T4, ndraws=100)
+
+# dharma
+dh_check_brms(dhglm_T4)
+dh_check_brms(glmm_T4)
+```
+
+### Calculate R2
+
+```{r}
+performance::r2_bayes(dhglm_T4)
+performance::r2_bayes(glmm_T4)
+```
+
+### Calculate contrasts and test for pairwise significance
+
+```{r}
+# Average marginal contrasts - change significance level as needed
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T4, conf_level = 0.95), .x)))
+map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T4, conf_level = 0.95), .x)))
+
+# Test significance of differences between seasons
+dhglm_T4 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+glmm_T4 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
+
+# Test significance of sex within each season
+dhglm_T4 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+glmm_T4 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
+
+# Test significance of breeding status
+dhglm_T4 %>% emmeans(pairwise ~ Breeder, level=0.95)
+glmm_T4 %>% emmeans(pairwise ~ Breeder, level=0.95)
+```
+
+## Extract Model Results
+
+```{r}
+## DHGLMs
+models_DHGLM <- list(
+    dhglm_GC = dhglm_GC,
+    dhglm_T3 = dhglm_T3,
+    dhglm_T4 = dhglm_T4
+  )
+  
+  # Function to summarize posterior estimates for DHGLM models using `ci()`
+  summarize_posteriors_dhglm <- function(model, model_name) {
+    posterior_estimates <- posterior_samples(model) 
+    posterior_estimates <- posterior_estimates[, 1:13]
+    
+    do.call(rbind, lapply(names(posterior_estimates), function(param) {
+      values <- posterior_estimates[[param]]
+      ci_vals <- bci(values, ci = 0.95)  # toggle sig level as needed
+      data.frame(
+        Model = model_name,
+        Effect = param,
+        Estimate = round(mean(values), 4),
+        lower = round(ci_vals$CI_low, 4),
+        upper = round(ci_vals$CI_high, 4)
+      )
+    }))
+  }
+  
+  # Loop through all models and combine results for DHGLM models
+  dhglm_results <- do.call(rbind, lapply(names(models_DHGLM), function(model_name) {
+    summarize_posteriors_dhglm(models_DHGLM[[model_name]], model_name)
+  }))
+  
+  # Format and pivot results for DHGLM models
+  dhglm_results_clean <- dhglm_results %>% 
+    group_by(Effect) %>% 
+    pivot_wider(
+      names_from = Model,
+      values_from = c(Estimate, lower, upper))
+  
+# GLMMs
+  models_GLMM <- list(
+    glmm_GC = glmm_GC,
+    glmm_T3 = glmm_T3,
+    glmm_T4 = glmm_T4
+  )
+  
+  # Function to summarize posterior estimates for models with genotypes using `ci()`
+  summarize_posteriors <- function(model, model_name) {
+    posterior_estimates <- posterior_samples(model) 
+    posterior_estimates <- posterior_estimates[, 1:12]
+    
+    do.call(rbind, lapply(names(posterior_estimates), function(param) {
+      values <- posterior_estimates[[param]]
+      ci_vals <- bci(values, ci = 0.95)  # toggle sig level as needed
+      data.frame(
+        Model = model_name,
+        Effect = param,
+        Estimate = round(mean(values), 4),
+        lower = round(ci_vals$CI_low, 4),
+        upper = round(ci_vals$CI_high, 4)
+      )
+    }))
+  }
+  
+
+  # Loop through all models and combine results for models with genotypes
+  glmm_results <- do.call(rbind, lapply(names(models_GLMM), function(model_name) {
+    summarize_posteriors(models_GLMM[[model_name]], model_name)
+  }))
+  
+  
+  # Format and pivot results for models with genotypes
+  glmm_results_clean <- glmm_results %>% 
+    group_by(Effect) %>%
+    pivot_wider(
+      names_from = Model,
+      values_from = c(Estimate, lower, upper))
+  
+  # Define the custom order for the Effect column
+  custom_order <- c(
+    "b_Intercept",
+    "b_scaleAnthropogenic", 
+    "b_BreederYes",
+    "b_Conditionfresh",
+    "b_scaleISA",
+    "b_Biol.SeasonMating",
+    "b_Biol.SeasonPupping",
+    "b_Biol.SeasonMating:SexMale",
+    "b_Biol.SeasonPupping:SexMale",
+    "b_SexMale",
+    "sd_Individual__Intercept",
+    "b_sigma_Intercept", 
+    "sd_Individual__sigma_Intercept")  
+  
+final_results <- full_join(dhglm_results_clean, glmm_results_clean, by="Effect") %>% 
+    filter(Effect != "sigma") %>%
+    mutate(Effect = factor(Effect, levels = custom_order)) %>%
+    arrange(Effect) %>% 
+  select(
+    Effect,
+    Estimate_dhglm_GC, lower_dhglm_GC, upper_dhglm_GC,
+    Estimate_dhglm_T3, lower_dhglm_T3, upper_dhglm_T3,
+    Estimate_dhglm_T4, lower_dhglm_T4, upper_dhglm_T4,
+    Estimate_glmm_GC, lower_dhglm_GC, upper_glmm_GC,
+    Estimate_glmm_T3, lower_dhglm_T3, upper_glmm_T3,
+    Estimate_glmm_T4, lower_dhglm_T4, upper_glmm_T4
+  )
+
+View(final_results)
+```
+
+## Plot population-level effectss
+
+### Plot hormone concentrations vs. diet // impervious surface cover
+
+```{r}
+```{r}
+# Extract conditional effects for diet
+cond_GC_ID <- conditional_effects(dhglm_GC, effects="Anthropogenic")
+cond_T3_ID <- conditional_effects(dhglm_T3, effects="Anthropogenic")
+cond_T4_ID <- conditional_effects(dhglm_T4, effects="Anthropogenic")
+
+cond_GC_ID <- data.frame(cond_GC_ID$Anthropogenic)
+cond_T3_ID <- data.frame(cond_T3_ID$Anthropogenic)
+cond_T4_ID <- data.frame(cond_T4_ID$Anthropogenic)
+
+# Define a sequence of values for ISA from 0 to 100
+ISA_values <- seq(0, 100, by = 1) 
+int_conditions <- list(ISA = ISA_values)
+
+# Compute conditional effects using the new data for ISA
+cond_GC_ISA_ID <- conditional_effects(dhglm_GC, effects="ISA", int_conditions = int_conditions)
+cond_T3_ISA_ID <- conditional_effects(dhglm_T3, effects="ISA", int_conditions = int_conditions)
+cond_T4_ISA_ID <- conditional_effects(dhglm_T4, effects="ISA", int_conditions = int_conditions)
+
+cond_GC_ISA_ID <- data.frame(cond_GC_ISA_ID$ISA)
+cond_T3_ISA_ID <- data.frame(cond_T3_ISA_ID$ISA)
+cond_T4_ISA_ID <- data.frame(cond_T4_ISA_ID$ISA)
+
+## GC
+p.GC_DHGLM_Diet_ISA <- ggplot() +
+  
+  geom_ribbon(data = cond_GC_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.5, fill = "#8C8076") +
+  geom_ribbon(data = cond_GC_ISA_ID, aes(x = ISA/100, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#CC7677") +
+  
+  geom_line(data = cond_GC_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#2D2926", size = 1) +
+  geom_line(data = cond_GC_ISA_ID, aes(x = ISA/100, y = log(estimate__)), color = "#A4193D", size = 1) +
+  
+  geom_point(data = dhglm_df_GC, aes(x = Anthropogenic, y = log(GC)), color = "#2D2926", alpha = 0.3) +
+  geom_jitter(data = dhglm_df_GC, aes(x = ISA/100, y = log(GC)), color = "#A4193D", alpha = 0.5) +
+  
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.005, 0.05), limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+  
+
+## T3
+p.T3_DHGLM_Diet_ISA <- ggplot() +
+  
+    geom_ribbon(data = cond_T3_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.5, fill = "#2D2926") +
+  geom_ribbon(data = cond_T3_ISA_ID, aes(x = ISA/100, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#FFA15D") +
+  
+  geom_line(data = cond_T3_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#2D2926", size = 1) +
+  geom_line(data = cond_T3_ISA_ID, aes(x = ISA/100, y = log(estimate__)), color = "#FF7522", size = 1, linetype = "dashed") +
+  
+  geom_point(data = dhglm_df, aes(x = Anthropogenic, y = log(T3)), color = "#2D2926", alpha = 0.3) +
+  geom_jitter(data = dhglm_df, aes(x = ISA/100, y = log(T3)), color = "#FF7522", alpha = 0.5) +
+  
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.005, 0.05), limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) 
+
+## T4
+p.T4_DHGLM_Diet_ISA <- ggplot() +
+  
+  geom_ribbon(data = cond_T4_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.5, fill = "#2D2926") +
+  geom_ribbon(data = cond_T4_ISA_ID, aes(x = ISA/100, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#55C235") +
+  
+  geom_line(data = cond_T4_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#2D2926", size = 1) +
+  geom_line(data = cond_T4_ISA_ID, aes(x = ISA/100, y = log(estimate__)), color = "#2D661C", size = 1) +
+  
+  geom_point(data = dhglm_df, aes(x = Anthropogenic, y = log(T4)), color = "#2D2926", alpha = 0.3) +
+  geom_jitter(data = dhglm_df, aes(x = ISA/100, y = log(T4)), color = "#2D661C", alpha = 0.5) +
+  
+  # Common graphics
+  xlab("Proportion Anthropogenic Food / Impervious Surface Cover") +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.005, 0.05), limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+
+## Arrange plots
+ggarrange(p.GC_DHGLM_Diet_ISA, p.T3_DHGLM_Diet_ISA, p.T4_DHGLM_Diet_ISA, ncol=1)
+
+# ggsave("Figures/Figure2.png", dpi=600, height=7, width=4)
+```
+
+## Plot hormone concentrations by breeding status and season/sex
+
+```{r}
+### BREEDING STATUS ###
+
+# Extract conditional effects
+cond_breeder_GC_ID <- conditional_effects(dhglm_GC, effects="Breeder")
+cond_breeder_T3_ID <- conditional_effects(dhglm_T3, effects="Breeder")
+cond_breeder_T4_ID <- conditional_effects(dhglm_T4, effects="Breeder")
+
+cond_breeder_GC_ID <- data.frame(cond_breeder_GC_ID$Breeder)
+cond_breeder_T3_ID <- data.frame(cond_breeder_T3_ID$Breeder)
+cond_breeder_T4_ID <- data.frame(cond_breeder_T4_ID$Breeder)
+
+p.GC_DHGLM_breeder <- ggplot(cond_breeder_GC_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = dhglm_df_GC, aes(x = Breeder, y = log(GC), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#A4193D", "#CC7677"))+
+  scale_color_manual(values=c("#A4193D", "#CC7677"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeder", "No" = "Nonbreeder"))+
+  theme(legend.position = "none")
+
+p.T3_DHGLM_breeder <- ggplot(cond_breeder_T3_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = dhglm_df, aes(x = Breeder, y = log(T3), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#FF7522", "#ffb27d"))+
+  scale_color_manual(values=c("#FF7522", "#ffb27d"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeder", "No" = "Nonbreeder"))+
+  theme(legend.position = "none")
+
+
+p.T4_DHGLM_breeder <- ggplot(cond_breeder_T4_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = dhglm_df, aes(x = Breeder, y = log(T4), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#2D661C", "#55C235"))+
+  scale_color_manual(values=c("#2D661C", "#55C235"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeder", "No" = "Nonbreeder"))+
+  theme(legend.position = "none")
+
+
+### SEX BY SEASON ###
+
+cond_GC_ID_month.sex <- conditional_effects(dhglm_GC)[7]
+cond_GC_ID_month.sex <- data.frame(cond_GC_ID_month.sex$`Biol.Season:Sex`)
+cond_T3_ID_month.sex <- conditional_effects(dhglm_T3)[7]
+cond_T3_ID_month.sex <- data.frame(cond_T3_ID_month.sex$`Biol.Season:Sex`)
+cond_T4_ID_month.sex <- conditional_effects(dhglm_T4)[7]
+cond_T4_ID_month.sex <- data.frame(cond_T4_ID_month.sex$`Biol.Season:Sex`)
+
+# GC
+p.GC.DHGLM.int <- ggplot(cond_GC_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = dhglm_df_GC, aes(x = Biol.Season, y = log(GC), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Glucocorticoids (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#A4193D", "#CC7677")) +
+    scale_color_manual(values = c("#A4193D", "#CC7677")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+    theme(legend.position = "none")
+
+# T3
+p.T3.DHGLM.int <- ggplot(cond_T3_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = dhglm_df, aes(x = Biol.Season, y = log(T3), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Triiodothyronine (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#FF7522", "#ffb27d")) +
+    scale_color_manual(values = c("#FF7522", "#ffb27d")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+    theme(legend.position = "none")
+
+# T4
+p.T4.DHGLM.int <- ggplot(cond_T4_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = dhglm_df, aes(x = Biol.Season, y = log(T4), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Thyroxine (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#2D661C", "#55C235")) +
+    scale_color_manual(values = c("#2D661C", "#55C235")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+
+  
+## ARRANGE PLOTS ##
+ggarrange(p.GC_DHGLM_breeder, p.T3_DHGLM_breeder, p.T4_DHGLM_breeder,
+          p.GC.DHGLM.int, p.T3.DHGLM.int, p.T4.DHGLM.int, nrow=2, ncol=3)
+
+# ggsave("Figures/Figure3.png", dpi=600, height=5, width=8)
+```
+
+# Individual-level effects
+
+## Calculate repeatability and the coefficient of variation in predictability
+
+```{r}
+## DHGLM ##
+
+# Variance Components - GC
+colnames(posterior_samples(dhglm_GC))[1:13]
+
+var_ind_GC <- posterior_samples(dhglm_GC)$"sd_Individual__Intercept"^2
+var_res_GC <- (exp(posterior_samples(dhglm_GC)$"b_sigma_Intercept"))^2
+rpt_GC <- var_ind_GC / (var_ind_GC + var_res_GC)
+
+# Variance Components - T3
+var_ind_T3 <- posterior_samples(dhglm_T3)$"sd_Individual__Intercept"^2
+var_res_T3 <- (exp(posterior_samples(dhglm_T3)$"b_sigma_Intercept"))^2
+rpt_T3 <- var_ind_T3 / (var_ind_T3 + var_res_T3)
+
+# Variance Components - T4
+var_ind_T4 <- posterior_samples(dhglm_T4)$"sd_Individual__Intercept"^2
+var_res_T4 <- (exp(posterior_samples(dhglm_T4)$"b_sigma_Intercept"))^2
+rpt_T4 <- var_ind_T4 / (var_ind_T4 + var_res_T4)
+
+mean(rpt_GC);ci(rpt_GC)
+mean(rpt_T3);ci(rpt_T3)
+mean(rpt_T4);ci(rpt_T4)
+
+# CVp - GC
+sigma_ind_GC <- exp(posterior_samples(dhglm_GC)$"sd_Individual__sigma_Intercept"^2)
+CVp_GC <- sqrt(sigma_ind_GC - 1)
+
+# CVp - T3
+sigma_ind_T3 <- exp(posterior_samples(dhglm_T3)$"sd_Individual__sigma_Intercept"^2)
+CVp_T3 <- sqrt(sigma_ind_T3 - 1)
+
+# CVp - T4
+sigma_ind_T4 <- exp(posterior_samples(dhglm_T4)$"sd_Individual__sigma_Intercept"^2)
+CVp_T4 <- sqrt(sigma_ind_T4 - 1)
+
+mean(CVp_GC);ci(CVp_GC)
+mean(CVp_T3);ci(CVp_T3)
+mean(CVp_T4);ci(CVp_T4)
+
+## GLMM ##
+
+# Variance Components - GC
+colnames(posterior_samples(glmm_GC))[1:13]
+
+var_ind_GC_glmm <- posterior_samples(glmm_GC)$"sd_Individual__Intercept"^2
+var_res_GC_glmm <- (posterior_samples(glmm_GC)$"sigma")^2
+rpt_GC_glmm <- var_ind_GC_glmm / (var_ind_GC_glmm + var_res_GC_glmm)
+
+# Variance Components - T3
+var_ind_T3_glmm <- posterior_samples(glmm_T3)$"sd_Individual__Intercept"^2
+var_res_T3_glmm <- (posterior_samples(glmm_T3)$"sigma")^2
+rpt_T3_glmm <- var_ind_T3_glmm / (var_ind_T3_glmm + var_res_T3_glmm)
+
+# Variance Components - T4
+var_ind_T4_glmm <- posterior_samples(glmm_T4)$"sd_Individual__Intercept"^2
+var_res_T4_glmm <- (posterior_samples(glmm_T4)$"sigma")^2
+rpt_T4_glmm <- var_ind_T4_glmm / (var_ind_T4_glmm + var_res_T4_glmm)
+
+mean(rpt_GC_glmm);ci(rpt_GC_glmm)
+mean(rpt_T3_glmm);ci(rpt_T3_glmm)
+mean(rpt_T4_glmm);ci(rpt_T4_glmm)
+```
+
+## Plot individuals means and rIIV
+
+### GC 
+
+```{r}
+## MEAN ##
+
+# Generate predictions for mean parameter mu
+mu_mat <- posterior_linpred(dhglm_GC, dpar = 'mu')
+colnames(mu_mat) <- dhglm_df_GC$Individual
+
+# extract 95% HPD, calculate means, and join to metadata
+mu_posteriors_GC <- as.data.frame(mu_mat) %>% 
+  pivot_longer(cols=everything(), names_to="Individual", values_to="value") %>%
+  dplyr::group_by(Individual) %>%
+  dplyr::mutate(expGC = exp(value),
+    hpd = list(HPDinterval(as.mcmc(value), prob = 0.95)),
+    lower = hpd[[1]][1],  # Extract lower bound
+    upper = hpd[[1]][2]   # Extract upper bound
+  ) %>%
+  filter(value >= lower & value <= upper) %>% 
+  dplyr::mutate(meanGC = mean(expGC),
+                meanlogGC =mean(value))%>%
+  dplyr::ungroup() %>% 
+  left_join(select(dhglm_df_GC[!duplicated(dhglm_df_GC$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA))
+
+# Plot
+p.type.GC <- ggplot()+
+  ggridges::geom_density_ridges(data = mu_posteriors_GC, 
+                                aes(x = value,
+                                    y = reorder(as.factor(Individual), meanlogGC),
+                                    height = ..density.., 
+                                    scale = 1.5, fill=Breeder), alpha = 0.6,
+                                stat = "density", trim=T)+
+  geom_point(data = mu_posteriors_GC[!duplicated(mu_posteriors_GC$Individual),],
+             aes(x = meanlogGC, y = as.factor(Individual), shape = Breeder),
+             show.legend = c(size=F))+
+  labs(y = "", x = "Log Glucocorticoids (ng/g)")+
+  theme_custom()+
+  scale_x_continuous(breaks=c(3,4,5,6,7),
+                    limits=c(2.5,7.5))+
+  scale_fill_manual(values = c("Yes" = "#CC7677", "No" = "#A4193D"))+
+  theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+
+## RIIV ##
+
+# Generate predictions for sigma
+sigma_mat <- posterior_linpred(dhglm_GC, dpar = 'sigma', transform = TRUE) # transform = TRUE exponentiates the mean residual variances
+colnames(sigma_mat) <- dhglm_df_GC$Individual
+
+# Calculate 95% HDI for each individual and filter posterior
+sd_posteriors_GC <- as.data.frame(sigma_mat) %>%
+  pivot_longer(everything(), names_to = "Individual", values_to = "riiv") %>%
+  group_by(Individual) %>%
+  mutate(
+    lower = HPDinterval(as.mcmc(riiv))[1],
+    upper = HPDinterval(as.mcmc(riiv))[2]
+  ) %>%
+  filter(riiv >= lower & riiv <= upper) %>% 
+  mutate(
+    meanrIIV = mean(riiv)) %>%
+  ungroup() %>%
+  left_join(select(dhglm_df_GC[!duplicated(dhglm_df_GC$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA, n)) 
+
+# Plot
+p.riiv.GC <- ggplot()+
+    ggridges::geom_density_ridges(data = sd_posteriors_GC, 
+                                  aes(x = (riiv),
+                                      y = reorder(as.factor(Individual), (meanrIIV)),
+                                      height = ..density.., 
+                                      scale = 1.5, fill=Breeder), alpha = 0.6,
+                                  stat = "density", trim=T)+
+    geom_point(data = sd_posteriors_GC[!duplicated(sd_posteriors_GC$Individual),],
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
+               show.legend = c(size=F))+
+    labs(y = "", x = "rIIV Log Glucocorticoids (ng/g)")+
+    theme_custom()+
+    xlim(0,1.564)+
+    scale_fill_manual(values = c("Yes" = "#CC7677", "No" = "#A4193D"))+
+    theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+
+```
+
+### T3
+
+```{r}
+## MEAN ##
+
+mu_mat_T3 <- posterior_linpred(dhglm_T3, dpar = 'mu')
+colnames(mu_mat_T3) <- dhglm_df$Individual
+
+mu_posteriors_T3 <- as.data.frame(mu_mat_T3) %>% 
+  pivot_longer(cols=everything(), names_to="Individual", values_to="value") %>%
+  dplyr::group_by(Individual) %>%
+  dplyr::mutate(expT3 = exp(value),
+    hpd = list(HPDinterval(as.mcmc(value), prob = 0.95)),
+    lower = hpd[[1]][1],  # Extract lower bound
+    upper = hpd[[1]][2]   # Extract upper bound
+  ) %>%
+  filter(value >= lower & value <= upper) %>% 
+  dplyr::mutate(meanT3 = mean(expT3),
+                meanlogT3 =mean(value))%>%
+  dplyr::ungroup() %>% 
+  left_join(select(dhglm_df[!duplicated(dhglm_df$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA))
+
+p.type.T3 <- ggplot()+
+  ggridges::geom_density_ridges(data = mu_posteriors_T3, 
+                                aes(x = (value),
+                                    y = reorder(as.factor(Individual), meanlogT3),
+                                    height = ..density.., 
+                                    scale = 1.5, fill=Breeder), alpha = 0.8,
+                                stat = "density", trim=T)+
+  geom_point(data = mu_posteriors_T3[!duplicated(mu_posteriors_T3$Individual),],
+             aes(x = (meanlogT3), y = as.factor(Individual), shape = Breeder),
+             show.legend = c(size=F))+
+  labs(y = "", x = "Log Triiodothyronine (ng/g)")+
+  theme_custom()+
+  scale_x_continuous(breaks=c(3,4,5,6,7),
+                    limits=c(2.5,7.5))+
+  scale_fill_manual(values = c("Yes" = "#FFA15D", "No" = "#ff6200"))+
+  theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+
+
+sigma_mat_T3 <- posterior_linpred(dhglm_T3, dpar = 'sigma', transform = TRUE)
+colnames(sigma_mat_T3) <- dhglm_df$Individual
+
+sd_posteriors_T3 <- as.data.frame(sigma_mat_T3) %>%
+  pivot_longer(everything(), names_to = "Individual", values_to = "riiv") %>%
+  group_by(Individual) %>%
+  mutate(
+    lower = HPDinterval(as.mcmc(riiv))[1],
+    upper = HPDinterval(as.mcmc(riiv))[2]
+  ) %>%
+  filter(riiv >= lower & riiv <= upper) %>% 
+  mutate(
+    meanrIIV = mean(riiv)) %>%
+  ungroup() %>%
+  left_join(select(dhglm_df[!duplicated(dhglm_df$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA, n)) 
+
+
+## RIIV ##
+
+p.riiv.T3 <- ggplot()+
+    ggridges::geom_density_ridges(data = sd_posteriors_T3, 
+                                  aes(x = (riiv),
+                                      y = reorder(as.factor(Individual), (meanrIIV)),
+                                      height = ..density.., 
+                                      scale = 1.5, fill=Breeder), alpha = 0.8,
+                                  stat = "density", trim=T)+
+    geom_point(data = sd_posteriors_T3[!duplicated(sd_posteriors_T3$Individual),],
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
+               show.legend = c(size=F))+
+    labs(y = "", x = "rIIV Log Triiodothyronine (ng/g)")+
+    theme_custom()+
+    xlim(0,1.564)+
+    scale_fill_manual(values = c("Yes" = "#FFA15D", "No" = "#ff6200"))+
+    theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+```
+
+### T4
+
+```{r}
+## MEAN ##
+mu_mat_T4 <- posterior_linpred(dhglm_T4, dpar = 'mu')
+colnames(mu_mat_T4) <- dhglm_df$Individual 
+
+mu_posteriors_T4 <- as.data.frame(mu_mat_T4) %>% 
+  pivot_longer(cols=everything(), names_to="Individual", values_to="value") %>%
+  dplyr::group_by(Individual) %>%
+  dplyr::mutate(expT4 = exp(value),
+    hpd = list(HPDinterval(as.mcmc(value), prob = 0.95)),
+    lower = hpd[[1]][1],  # Extract lower bound
+    upper = hpd[[1]][2]   # Extract upper bound
+  ) %>%
+  filter(value >= lower & value <= upper) %>% 
+  dplyr::mutate(meanT4 = mean(expT4),
+                meanlogT4 =mean(value))%>%
+  dplyr::ungroup() %>% 
+  left_join(select(dhglm_df[!duplicated(dhglm_df$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA))
+
+p.type.T4 <- ggplot()+
+  ggridges::geom_density_ridges(data = mu_posteriors_T4, 
+                                aes(x = (value),
+                                    y = reorder(as.factor(Individual), meanlogT4),
+                                    height = ..density.., 
+                                    scale = 1.5, fill=Breeder), alpha = 0.6,
+                                stat = "density", trim=T)+
+  geom_point(data = mu_posteriors_T4[!duplicated(mu_posteriors_T4$Individual),],
+             aes(x = (meanlogT4), y = as.factor(Individual), shape = Breeder),
+             show.legend = c(size=F))+
+  labs(y = "", x = "Log Thyroxine (ng/g)")+
+  theme_custom()+
+  scale_x_continuous(breaks=c(3,4,5,6,7),
+                    limits=c(2.5,7.5))+
+  scale_fill_manual(values = c("Yes" = "#8bd973", "No" = "#2D661C"))+
+  theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+
+
+## RIIV ##
+
+sigma_mat_T4 <- posterior_linpred(dhglm_T4, dpar = 'sigma', transform = TRUE)
+colnames(sigma_mat_T4) <- dhglm_df$Individual
+
+sd_posteriors_T4 <- as.data.frame(sigma_mat_T4) %>%
+  pivot_longer(everything(), names_to = "Individual", values_to = "riiv") %>%
+  group_by(Individual) %>%
+  mutate(
+    lower = HPDinterval(as.mcmc(riiv))[1],
+    upper = HPDinterval(as.mcmc(riiv))[2]
+  ) %>%
+  filter(riiv >= lower & riiv <= upper) %>% 
+  mutate(
+    meanrIIV = mean(riiv)) %>%
+  ungroup() %>%
+  left_join(select(dhglm_df[!duplicated(dhglm_df$Individual),], 
+                   Individual, Sex, Breeder, Condition, Anthropogenic, ISA, n)) 
+
+
+p.riiv.T4 <- ggplot()+
+    ggridges::geom_density_ridges(data = sd_posteriors_T4, 
+                                  aes(x = (riiv),
+                                      y = reorder(as.factor(Individual), (meanrIIV)),
+                                      height = ..density.., 
+                                      scale = 1.5, fill=Breeder), alpha = 0.6,
+                                  stat = "density", trim=T)+
+    geom_point(data = sd_posteriors_T4[!duplicated(sd_posteriors_T4$Individual),],
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
+               show.legend = c(size=F))+
+    labs(y = "", x = "rIIV Log Thyroxine (ng/g)")+
+    theme_custom()+
+    xlim(0,1.564)+
+    scale_fill_manual(values = c("Yes" = "#8bd973", "No" = "#2D661C"))+
+    theme(legend.position = "none")+
+  coord_cartesian(clip = "off")
+
+```
+
+### Arrange plots
+
+```{r}
+# Means
+ggarrange(p.type.GC, p.type.T3, p.type.T4, ncol=3)
+
+# ggsave("Figures/Figure4a-c.png", height=3.5, width=10, dpi=300)
+
+# rIIV
+ggarrange(p.riiv.GC, p.riiv.T3, p.riiv.T4, ncol=3)
+
+# ggsave("Figures/Figure4d-f.png", height=3.5, width=10, dpi=300)
+```
+
+#  Test for correlation between rIIV and sample size
+
+```{r}
+## Run correlation test
+corr.test.riiv.GC <- sd_posteriors_GC %>% distinct(Individual, meanrIIV, n)
+corr.test.riiv.T3 <- sd_posteriors_T3 %>% distinct(Individual, meanrIIV, n)
+corr.test.riiv.T4 <- sd_posteriors_T4 %>% distinct(Individual, meanrIIV, n)
+
+cor.GC.riiv <- cor.test(corr.test.riiv.GC$n, corr.test.riiv.GC$meanrIIV)
+cor.T3.riiv <- cor.test(corr.test.riiv.T3$n, corr.test.riiv.T3$meanrIIV)
+cor.T4.riiv <- cor.test(corr.test.riiv.T4$n, corr.test.riiv.T4$meanrIIV)
+
+# Extract r and p values for figures
+value_cor.GC.riiv <- paste0("r = ", round(cor.GC.riiv$estimate,2))
+value_p.GC.riiv <- paste0("p = ", round(cor.GC.riiv$p.value,2))
+value_cor.T3.riiv <- paste0("r = ", round(cor.T3.riiv$estimate,2))
+value_p.T3.riiv <- paste0("p = ", round(cor.T3.riiv$p.value,2))
+value_cor.T4.riiv <- paste0("r = ", round(cor.T4.riiv$estimate,2))
+value_p.T4.riiv <- paste0("p = ", round(cor.T4.riiv$p.value,2))
+
+# Plot correlations
+p.corr.GC <- ggplot(corr.test.riiv.GC, aes(x=n, y=meanrIIV))+
+  geom_point()+
+  geom_smooth(method="lm", color="#2D2926", fill="#8C8076")+
+  xlab("Sample Size")+ylab("meanrIIV Log Glucocorticoids")+
+  theme_custom()+
+  scale_y_continuous(limits = c(0.6, 1.1))+
+  scale_x_continuous(limits = c(5, 15), breaks = seq(5,15,1),
+                     expand = c(0.01, 0.01))+
+  
+  # Add annotation
+  annotate("text", x = 5.5, y = 1.1, label = value_cor.GC.riiv, hjust = 0, size = 3) +
+  annotate("text", x = 5.5, y = 1.05, label = value_p.GC.riiv, hjust = 0, size = 3)
+
+## T3
+p.corr.T3 <- ggplot(corr.test.riiv.T3, aes(x=n, y=meanrIIV))+
+  geom_point()+
+  geom_smooth(method="lm", color="#2D2926", fill="#8C8076")+
+  xlab("Sample Size")+ylab("meanrIIV Log Triiodothyronine")+
+  theme_custom()+
+  scale_y_continuous(limits = c(0.6, 1.1))+
+  scale_x_continuous(limits = c(5, 15), breaks = seq(5,15,1),
+                     expand = c(0.01, 0.01))+
+  
+  # Add annotation
+  annotate("text", x = 5.5, y = 1.1, label = value_cor.T3.riiv, hjust = 0, size = 3) +
+  annotate("text", x = 5.5, y = 1.05, label = value_p.T3.riiv, hjust = 0, size = 3)
+
+
+## T4
+p.corr.T4 <- ggplot(corr.test.riiv.T4, aes(x=n, y=meanrIIV))+
+  geom_point()+
+  geom_smooth(method="lm", color="#2D2926", fill="#8C8076")+
+  xlab("Sample Size")+ylab("meanrIIV Log Thyroxine")+
+  theme_custom()+
+  scale_y_continuous(limits = c(0.6, 1.1))+
+  scale_x_continuous(limits = c(5, 15), breaks = seq(5,15,1),
+                     expand = c(0.01, 0.01))+
+  
+  # Add annotation
+  annotate("text", x = 5.5, y = 1.1, label = value_cor.T4.riiv, hjust = 0, size = 3) +
+  annotate("text", x = 5.5, y = 1.05, label = value_p.T4.riiv, hjust = 0, size = 3)
+
+# Arrange plots
+ggarrange(p.corr.GC, p.corr.T3, p.corr.T4, nrow=1)
+
+# ggsave("Figures/FigureS5.png", dpi=600, height=2.5, width=8)
+```
+
+
