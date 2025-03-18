@@ -106,7 +106,7 @@ Cleaned raw data:
 
 ## Model output
 
-The `Model_Output` folder on Git Hub does not contain `.rds` files due to file size constraints. However, these files can be downloaded from Dryad Digital Repository (doi: XXXXXXXXXXX). The model output files include:
+The output of the models are not stored on GitHub due to the large file sizes, but can be generated on your own device, or are available on Dryad Digital Repository (doi: XXXX).
 
 | `dhglm_GC.rds`, `dhglm_T3.rds`, and `dhglm_T4.rds`: model output for the double hierarchical generalized linear models
 
