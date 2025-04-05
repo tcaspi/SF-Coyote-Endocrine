@@ -103,7 +103,7 @@ diet <- read.csv("Data/func.RRA.clean.csv") %>%
 hormones_diet <- inner_join(hormones_clean, diet, by="SampleID")
 
 # Write to CSV
-write.csv(hormones_diet, "Cleaned_Data/clean_hormone_all_diet.csv", row.names=F)
+# write.csv(hormones_diet, "Cleaned_Data/clean_hormone_all_diet.csv", row.names=F)
 
 # Make data frame of only samples with genotypes
 hormones_geno_diet <- hormones_clean %>% 
@@ -112,7 +112,7 @@ hormones_geno_diet <- hormones_clean %>%
   inner_join(diet, by="SampleID")
 
 #Write to CSV
-write.csv(hormones_geno_diet, "Cleaned_Data/clean_hormone_genotypes_diet.csv", row.names=F)
+# write.csv(hormones_geno_diet, "Cleaned_Data/clean_hormone_genotypes_diet.csv", row.names=F)
 ```
 
 # Summary Statistics
