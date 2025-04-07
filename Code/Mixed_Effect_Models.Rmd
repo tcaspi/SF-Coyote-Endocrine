@@ -164,31 +164,21 @@ performance::r2_bayes(glmm_GC)
 
 ### Calculate contrasts and test for pairwise significance
 
+Change confidence level as needed between 0.95 and 0.90.
+
 ```{r}
-# Average marginal contrasts - change significance level as needed
+# Average marginal contrasts
 comparisons_list <- list(
   list(variables = list(Anthropogenic = c(0, 1))),
   list(variables = list(ISA = c(0, 100))),
   list(variables = "Breeder"),
   list(variables = "Sex", by = "Biol.Season"))
 
-dhglm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_GC, comparison="lift", conf_level = 0.95), .x)))
+dhglm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_GC, comparison="lift", conf_level = 0.9), .x)))
 
-glmm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_GC, comparison="lift",conf_level = 0.95), .x)))
+glmm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_GC, comparison="lift",conf_level = 0.9), .x)))
 
-# Test significance of season differences 
-dhglm_GC %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-glmm_GC %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-
-# Test significance of sex within each season
-dhglm_GC %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-glmm_GC %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-
-# Test significance of breeding status
-dhglm_GC %>% emmeans(pairwise ~ Breeder, level=0.95)
-glmm_GC %>% emmeans(pairwise ~ Breeder, level=0.95)
-
-# Function to extract percent change information from avg_comparisons
+# Function to extract percent change from avg_comparisons
 extract_percent_change_info <- function(comparison_results, model_name) {
   output <- map_dfr(comparison_results, ~ {
     # Extract the estimates and confidence intervals
@@ -206,20 +196,47 @@ extract_percent_change_info <- function(comparison_results, model_name) {
       CI_Upper = ci_upper,
       Percent_Change = estimate * 100, 
       CI_Lower_Pct = ci_lower * 100,
-      CI_Upper_Pct = ci_upper * 100   
+      CI_Upper_Pct = ci_upper * 100,
+      Sex = NA
     )
   })
   
   return(output)
 }
 
-# Apply function to both dhglm_GC and glmm_GC
+# Apply function to both models
 dhglm_contrasts_GC <- extract_percent_change_info(dhglm_GC_percent_change, "dhglm_GC")
 glmm_contrasts_GC <- extract_percent_change_info(glmm_GC_percent_change, "glmm_GC")
 
+# Season differences within each sex percent change separately:
+season.sex <- list(Biol.Season = "pairwise")
+
+# Function to calculate percent change for each sex across seasons
+compute_season_ratios <- function(model, model_name, variable) {
+  avg_comparisons(model, conf_level = 0.9, variables = variable, by = "Sex", comparison = "ratio") %>%
+    as.data.frame() %>%
+    mutate(
+      Model = model_name,
+      Contrast = contrast,
+      Percent_Change = (estimate - 1) * 100,
+      CI_Lower_Pct = (conf.low - 1) * 100,
+      CI_Upper_Pct = (conf.high - 1) * 100,
+      Biol.Season = NA,
+      Sex = Sex
+    ) %>%
+    select(Model, Contrast, Percent_Change, CI_Lower_Pct, CI_Upper_Pct, Sex, Biol.Season)
+}
+
+# Apply function to both models
+season_ratios_dhglm_GC_calc <- compute_season_ratios(dhglm_GC, "dhglm_GC", season.sex)
+season_ratios_glmm_GC_calc <- compute_season_ratios(glmm_GC, "glmm_GC", season.sex)
+
 # Combine both models into a single data frame
-contrasts_GC <- bind_rows(dhglm_contrasts_GC, glmm_contrasts_GC)
+contrasts_GC <- bind_rows(dhglm_contrasts_GC, glmm_contrasts_GC) %>% 
+  select(-c(Estimate, CI_Lower, CI_Upper)) %>% 
+  bind_rows(season_ratios_dhglm_GC_calc, season_ratios_glmm_GC_calc)
 ```
+
 
 ## T3
 
@@ -281,27 +298,20 @@ performance::r2_bayes(glmm_T3)
 
 ```{r}
 # Average marginal contrasts - change significance level as needed
-dhglm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T3, comparison="lift", conf_level = 0.95), .x)))
-glmm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T3, comparison="lift", conf_level = 0.95), .x)))
+dhglm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T3, comparison="lift", conf_level = 0.9), .x)))
+glmm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T3, comparison="lift", conf_level = 0.9), .x)))
 
-# Test significance of differences between seasons
-dhglm_T3 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-glmm_T3 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-
-# Test significance of sex within each season
-dhglm_T3 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-glmm_T3 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-
-# Test significance of breeding status
-dhglm_T3 %>% emmeans(pairwise ~ Breeder, level=0.95)
-glmm_T3 %>% emmeans(pairwise ~ Breeder, level=0.95)
-
-# Apply function to both models
+# Apply functions to both models
 dhglm_contrasts_T3 <- extract_percent_change_info(dhglm_T3_percent_change, "dhglm_T3")
 glmm_contrasts_T3 <- extract_percent_change_info(glmm_T3_percent_change, "glmm_T3")
 
+season_ratios_dhglm_T3_calc <- compute_season_ratios(dhglm_T3, "dhglm_T3", season.sex)
+season_ratios_glmm_T3_calc <- compute_season_ratios(glmm_T3, "glmm_T3", season.sex)
+
 # Combine both models into a single data frame
-contrasts_T3 <- bind_rows(dhglm_contrasts_T3, glmm_contrasts_T3)
+contrasts_T3 <- bind_rows(dhglm_contrasts_T3, glmm_contrasts_T3) %>% 
+  select(-c(Estimate, CI_Lower, CI_Upper)) %>% 
+  bind_rows(season_ratios_dhglm_T3_calc, season_ratios_glmm_T3_calc)
 ```
 
 ## T4
@@ -364,27 +374,20 @@ performance::r2_bayes(glmm_T4)
 
 ```{r}
 # Average marginal contrasts - change significance level as needed
-dhglm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T4, comparison="lift", conf_level = 0.95), .x)))
-glmm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T4, comparison="lift", conf_level = 0.95), .x)))
-
-# Test significance of differences between seasons
-dhglm_T4 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-glmm_T4 %>% emmeans(pairwise ~ Biol.Season, level=0.95)
-
-# Test significance of sex within each season
-dhglm_T4 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-glmm_T4 %>% emmeans(pairwise ~ Sex | Biol.Season, level=0.9)
-
-# Test significance of breeding status
-dhglm_T4 %>% emmeans(pairwise ~ Breeder, level=0.95)
-glmm_T4 %>% emmeans(pairwise ~ Breeder, level=0.95)
+dhglm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T4, comparison="lift", conf_level = 0.9), .x)))
+glmm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T4, comparison="lift", conf_level = 0.9), .x)))
 
 # Apply function to both models
 dhglm_contrasts_T4 <- extract_percent_change_info(dhglm_T4_percent_change, "dhglm_T4")
 glmm_contrasts_T4 <- extract_percent_change_info(glmm_T4_percent_change, "glmm_T4")
 
+season_ratios_dhglm_T4_calc <- compute_season_ratios(dhglm_T4, "dhglm_T4", season.sex)
+season_ratios_glmm_T4_calc <- compute_season_ratios(glmm_T4, "glmm_T4", season.sex)
+
 # Combine both models into a single data frame
-contrasts_T4 <- bind_rows(dhglm_contrasts_T4, glmm_contrasts_T4)
+contrasts_T4 <- bind_rows(dhglm_contrasts_T4, glmm_contrasts_T4) %>% 
+  select(-c(Estimate, CI_Lower, CI_Upper)) %>% 
+  bind_rows(season_ratios_dhglm_T4_calc, season_ratios_glmm_T4_calc)
 ```
 
 ## Extract Model Results
@@ -504,12 +507,14 @@ View(final_results)
 ```{r}
 # Bind the results from each model together
 combined_contrasts <- bind_rows(contrasts_GC, contrasts_T3, contrasts_T4) %>%  
-  select(-c("Estimate", "CI_Lower","CI_Upper")) %>% 
   relocate(Biol.Season, .after = Contrast) %>% 
+  relocate(Sex, .after=Biol.Season) %>% 
   mutate(Hormone = case_when(
     grepl("GC$", Model) ~ "GC",
     grepl("T3$", Model) ~ "T3", 
-    grepl("T4$", Model) ~ "T4")) %>% 
+    grepl("T4$", Model) ~ "T4"),
+    sig = ifelse((CI_Lower_Pct > 0 & CI_Upper_Pct > 0) | 
+                   (CI_Lower_Pct < 0 & CI_Upper_Pct < 0), "*", "")) %>% 
   relocate(Hormone, .before="Model") %>% 
   relocate(Model, .after="Biol.Season") %>% 
   arrange(Hormone, Contrast, Biol.Season)
