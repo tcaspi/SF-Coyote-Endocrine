@@ -91,15 +91,27 @@ glmm_df %>% distinct(Individual, Breeder) %>% count(Breeder) # 22 breeders, 52 n
 ```{r}
 covariate_columns <- c("ISA", "Urban", "Pop.Den.2020", "Housing.Den.2020", "Anthropogenic")
 
-covariate_data <- glmm_df %>% select(all_of(covariate_columns))
+covariate_data <- glmm_df %>% select(all_of(covariate_columns)) %>% 
+  rename(
+    `Percent Impervious \n Surface Cover` = ISA,
+    `Percent \n Urban Cover` = `Urban`,
+   `Population \n Density` = Pop.Den.2020,
+    `Housing \n Density` = Housing.Den.2020,
+    `RRA Anthropogenic \n Food` = Anthropogenic)
+
+head(covariate_data)
 
 cor_matrix <- cor(covariate_data, use = "pairwise.complete.obs")
 ggcorrplot(cor_matrix, 
-           method = "circle",
+           method = "square",
            type = "lower",    
            lab = TRUE,      
            lab_size = 3,      
-           colors = c("red", "white", "blue"))
+           colors =c("#7570B3", "white", "#66A61E"))+
+  theme_custom()+
+  labs(x = NULL, y = NULL)
+
+# ggsave("Figures/FigureS2.png", dpi=600, height=5, width=7)
 ```
 
 # Population-level effects
@@ -174,9 +186,9 @@ comparisons_list <- list(
   list(variables = "Breeder"),
   list(variables = "Sex", by = "Biol.Season"))
 
-dhglm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_GC, comparison="lift", conf_level = 0.9), .x)))
+dhglm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_GC, comparison="lift", conf_level = 0.95), .x)))
 
-glmm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_GC, comparison="lift",conf_level = 0.9), .x)))
+glmm_GC_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_GC, comparison="lift",conf_level = 0.95), .x)))
 
 # Function to extract percent change from avg_comparisons
 extract_percent_change_info <- function(comparison_results, model_name) {
@@ -213,7 +225,7 @@ season.sex <- list(Biol.Season = "pairwise")
 
 # Function to calculate percent change for each sex across seasons
 compute_season_ratios <- function(model, model_name, variable) {
-  avg_comparisons(model, conf_level = 0.9, variables = variable, by = "Sex", comparison = "ratio") %>%
+  avg_comparisons(model, conf_level = 0.95, variables = variable, by = "Sex", comparison = "ratio") %>%
     as.data.frame() %>%
     mutate(
       Model = model_name,
@@ -298,8 +310,8 @@ performance::r2_bayes(glmm_T3)
 
 ```{r}
 # Average marginal contrasts - change significance level as needed
-dhglm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T3, comparison="lift", conf_level = 0.9), .x)))
-glmm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T3, comparison="lift", conf_level = 0.9), .x)))
+dhglm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T3, comparison="lift", conf_level = 0.95), .x)))
+glmm_T3_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T3, comparison="lift", conf_level = 0.95), .x)))
 
 # Apply functions to both models
 dhglm_contrasts_T3 <- extract_percent_change_info(dhglm_T3_percent_change, "dhglm_T3")
@@ -374,8 +386,8 @@ performance::r2_bayes(glmm_T4)
 
 ```{r}
 # Average marginal contrasts - change significance level as needed
-dhglm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T4, comparison="lift", conf_level = 0.9), .x)))
-glmm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T4, comparison="lift", conf_level = 0.9), .x)))
+dhglm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(dhglm_T4, comparison="lift", conf_level = 0.95), .x)))
+glmm_T4_percent_change <- map(comparisons_list, ~ do.call(avg_comparisons, c(list(glmm_T4, comparison="lift", conf_level = 0.95), .x)))
 
 # Apply function to both models
 dhglm_contrasts_T4 <- extract_percent_change_info(dhglm_T4_percent_change, "dhglm_T4")
@@ -549,6 +561,99 @@ cond_GC_ISA_ID <- data.frame(cond_GC_ISA_ID$ISA)
 cond_T3_ISA_ID <- data.frame(cond_T3_ISA_ID$ISA)
 cond_T4_ISA_ID <- data.frame(cond_T4_ISA_ID$ISA)
 
+## GC: Impervious surface cover
+p.GC_DHGLM_ISA <- ggplot() +
+  geom_ribbon(data = cond_GC_ISA_ID, aes(x = ISA, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#CC7677") +
+  geom_line(data = cond_GC_ISA_ID, aes(x = ISA, y = log(estimate__)), color = "#A4193D", size = 1) +
+  geom_jitter(data = dhglm_df_GC, aes(x = ISA, y = log(GC)), color = "#A4193D", alpha = 0.5) +
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.008, 0.05), limits = c(0, 100), breaks = c(0, 25, 50, 75, 100)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+  
+
+## T3: Impervious surface cover
+p.T3_DHGLM_ISA <- ggplot() +
+  geom_ribbon(data = cond_T3_ISA_ID, aes(x = ISA, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#FFA15D") +
+  geom_line(data = cond_T3_ISA_ID, aes(x = ISA, y = log(estimate__)), color = "#FF7522", size = 1, linetype = "dashed") +
+  geom_jitter(data = dhglm_df, aes(x = ISA, y = log(T3)), color = "#FF7522", alpha = 0.5) +
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.008, 0.05), limits = c(0, 100), breaks = c(0, 25, 50, 75, 100)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) 
+
+## T4: Impervious surface cover
+p.T4_DHGLM_ISA <- ggplot() +
+  geom_ribbon(data = cond_T4_ISA_ID, aes(x = ISA, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#55C235") +
+  geom_line(data = cond_T4_ISA_ID, aes(x = ISA, y = log(estimate__)), color = "#2D661C", size = 1) +
+  geom_jitter(data = dhglm_df, aes(x = ISA, y = log(T4)), color = "#2D661C", alpha = 0.5) +
+  
+  # Common graphics
+  xlab("Percent Impervious Surface Cover") +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.008, 0.05), limits = c(0, 100), breaks = c(0, 25, 50, 75, 100)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+
+## GC: Diet
+p.GC_DHGLM_Diet <- ggplot() +
+  geom_ribbon(data = cond_GC_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#CC7677") +
+  geom_line(data = cond_GC_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#A4193D", size = 1) +
+  geom_jitter(data = dhglm_df_GC, aes(x = Anthropogenic, y = log(GC)), color = "#A4193D", alpha = 0.5) +
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.001, 0.01), limits = c(-0.01, 1.01), breaks = c(0, .25, .50, .75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+
+## T3: Diet
+p.T3_DHGLM_Diet <- ggplot() +
+  geom_ribbon(data = cond_T3_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#FFA15D") +
+  geom_line(data = cond_T3_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#FF7522", size = 1) +
+  geom_jitter(data = dhglm_df, aes(x = Anthropogenic, y = log(T3)), color = "#FF7522", alpha = 0.5) +
+  # Common graphics
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.001, 0.01), limits = c(-0.01, 1.01), breaks = c(0, .25, .50, .75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+
+## T4: Diet
+p.T4_DHGLM_Diet <- ggplot() +
+  geom_ribbon(data = cond_T4_ID, aes(x = Anthropogenic, ymin = log(lower__), ymax = log(upper__)), alpha = 0.4, fill = "#55C235") +
+  geom_line(data = cond_T4_ID, aes(x = Anthropogenic, y = log(estimate__)), color = "#2D661C", size = 1) +
+  geom_jitter(data = dhglm_df, aes(x = Anthropogenic, y = log(T4)), color = "#2D661C", alpha = 0.5) +
+  # Common graphics
+  xlab("Proportion Anthropogenic Food") +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_x_continuous(expand = c(0.001, 0.01), limits = c(-0.01, 1.01), breaks = c(0, .25, .50, .75, 1)) +
+  scale_size_continuous(range = c(1, 3)) +
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7))
+
+## Arrange plots
+ggarrange(p.GC_DHGLM_Diet, p.GC_DHGLM_ISA,
+          p.T3_DHGLM_Diet, p.T3_DHGLM_ISA,
+          p.T4_DHGLM_Diet, p.T4_DHGLM_ISA,
+          ncol=2, nrow=3,
+          labels = c("a", "d", "b", "e", "c", "f"),
+          label.x = 0.13)
+
+# ggsave("Figures/Figure2.png", dpi=600, height=7, width=6)
+```
+
+OLD FIGURE
+```{r}
 ## GC
 p.GC_DHGLM_Diet_ISA <- ggplot() +
   
@@ -615,6 +720,8 @@ ggarrange(p.GC_DHGLM_Diet_ISA, p.T3_DHGLM_Diet_ISA, p.T4_DHGLM_Diet_ISA, ncol=1)
 
 # ggsave("Figures/Figure2.png", dpi=600, height=7, width=4)
 ```
+
+
 
 ## Plot hormone concentrations by breeding status and season/sex
 
@@ -890,16 +997,18 @@ p.type.GC <- ggplot()+
                                 aes(x = value,
                                     y = reorder(as.factor(Individual), meanlogGC),
                                     height = ..density.., 
-                                    scale = 1.5, fill=Breeder), alpha = 0.6,
+                                    scale = 1.5), alpha = 0.6, fill= "#A4193D",
                                 stat = "density", trim=T)+
   geom_point(data = mu_posteriors_GC[!duplicated(mu_posteriors_GC$Individual),],
-             aes(x = meanlogGC, y = as.factor(Individual), shape = Breeder),
-             show.legend = c(size=F))+
+             aes(x = meanlogGC, y = as.factor(Individual), shape = Sex, fill=Breeder),
+             size=2.5, color="black", show.legend = c(size=F))+
   labs(y = "", x = "Log Glucocorticoids (ng/g)")+
   theme_custom()+
+  theme(axis.title.x = element_text(size=12))+
   scale_x_continuous(breaks=c(3,4,5,6,7),
                     limits=c(2.5,7.5))+
-  scale_fill_manual(values = c("Yes" = "#CC7677", "No" = "#A4193D"))+
+  scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+  scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
   theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 
@@ -930,15 +1039,18 @@ p.riiv.GC <- ggplot()+
                                   aes(x = (riiv),
                                       y = reorder(as.factor(Individual), (meanrIIV)),
                                       height = ..density.., 
-                                      scale = 1.5, fill=Breeder), alpha = 0.6,
-                                  stat = "density", trim=T)+
+                                      scale = 1.5), alpha = 0.6,
+                                  fill= "#A4193D", stat = "density", trim=T)+
     geom_point(data = sd_posteriors_GC[!duplicated(sd_posteriors_GC$Individual),],
-               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex,
+                   fill=Breeder), size=2.5, color="black",
                show.legend = c(size=F))+
     labs(y = "", x = "rIIV Log Glucocorticoids (ng/g)")+
     theme_custom()+
+    theme(axis.title.x = element_text(size=12))+
     xlim(0,1.564)+
-    scale_fill_manual(values = c("Yes" = "#CC7677", "No" = "#A4193D"))+
+    scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+    scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
     theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 
@@ -972,16 +1084,18 @@ p.type.T3 <- ggplot()+
                                 aes(x = (value),
                                     y = reorder(as.factor(Individual), meanlogT3),
                                     height = ..density.., 
-                                    scale = 1.5, fill=Breeder), alpha = 0.8,
-                                stat = "density", trim=T)+
+                                    scale = 1.5), alpha = 0.8,
+                                fill = "#ff6200", stat = "density", trim=T)+
   geom_point(data = mu_posteriors_T3[!duplicated(mu_posteriors_T3$Individual),],
-             aes(x = (meanlogT3), y = as.factor(Individual), shape = Breeder),
-             show.legend = c(size=F))+
+             aes(x = (meanlogT3), y = as.factor(Individual), shape = Sex,
+                 fill=Breeder), color = "black", size=2.5, show.legend = c(size=F))+
   labs(y = "", x = "Log Triiodothyronine (ng/g)")+
   theme_custom()+
+  theme(axis.title.x = element_text(size=12))+
   scale_x_continuous(breaks=c(3,4,5,6,7),
                     limits=c(2.5,7.5))+
-  scale_fill_manual(values = c("Yes" = "#FFA15D", "No" = "#ff6200"))+
+  scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+  scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
   theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 
@@ -1011,15 +1125,18 @@ p.riiv.T3 <- ggplot()+
                                   aes(x = (riiv),
                                       y = reorder(as.factor(Individual), (meanrIIV)),
                                       height = ..density.., 
-                                      scale = 1.5, fill=Breeder), alpha = 0.8,
-                                  stat = "density", trim=T)+
+                                      scale = 1.5), alpha = 0.8,
+                                  fill = "#ff6200", stat = "density", trim=T)+
     geom_point(data = sd_posteriors_T3[!duplicated(sd_posteriors_T3$Individual),],
-               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex,
+                   fill = Breeder), color = "black", size = 2.5, 
                show.legend = c(size=F))+
     labs(y = "", x = "rIIV Log Triiodothyronine (ng/g)")+
     theme_custom()+
+    theme(axis.title.x = element_text(size=12))+
     xlim(0,1.564)+
-    scale_fill_manual(values = c("Yes" = "#FFA15D", "No" = "#ff6200"))+
+    scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+    scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
     theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 ```
@@ -1051,16 +1168,18 @@ p.type.T4 <- ggplot()+
                                 aes(x = (value),
                                     y = reorder(as.factor(Individual), meanlogT4),
                                     height = ..density.., 
-                                    scale = 1.5, fill=Breeder), alpha = 0.6,
-                                stat = "density", trim=T)+
+                                    scale = 1.5), alpha = 0.6,
+                                 fill="#2D661C", stat = "density", trim=T)+
   geom_point(data = mu_posteriors_T4[!duplicated(mu_posteriors_T4$Individual),],
-             aes(x = (meanlogT4), y = as.factor(Individual), shape = Breeder),
-             show.legend = c(size=F))+
+             aes(x = (meanlogT4), y = as.factor(Individual), shape = Sex,
+                 fill=Breeder), color = "black", size=2.5, show.legend = c(size=F))+
   labs(y = "", x = "Log Thyroxine (ng/g)")+
   theme_custom()+
+  theme(axis.title.x = element_text(size=12))+
   scale_x_continuous(breaks=c(3,4,5,6,7),
                     limits=c(2.5,7.5))+
-  scale_fill_manual(values = c("Yes" = "#8bd973", "No" = "#2D661C"))+
+  scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+  scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
   theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 
@@ -1090,15 +1209,17 @@ p.riiv.T4 <- ggplot()+
                                   aes(x = (riiv),
                                       y = reorder(as.factor(Individual), (meanrIIV)),
                                       height = ..density.., 
-                                      scale = 1.5, fill=Breeder), alpha = 0.6,
-                                  stat = "density", trim=T)+
+                                      scale = 1.5), alpha = 0.6,
+                                   fill="#2D661C", stat = "density", trim=T)+
     geom_point(data = sd_posteriors_T4[!duplicated(sd_posteriors_T4$Individual),],
-               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex),
-               show.legend = c(size=F))+
+               aes(x = (meanrIIV), y = as.factor(Individual), shape = Sex, 
+                   fill = Breeder), color="black", size=2.5, show.legend = c(size=F))+
     labs(y = "", x = "rIIV Log Thyroxine (ng/g)")+
     theme_custom()+
+    theme(axis.title.x = element_text(size=12))+
     xlim(0,1.564)+
-    scale_fill_manual(values = c("Yes" = "#8bd973", "No" = "#2D661C"))+
+    scale_shape_manual(values = c("Female" = 21, "Male" = 24))+
+  scale_fill_manual(values = c("Yes" = "black", "No" = "white"))+
     theme(legend.position = "none")+
   coord_cartesian(clip = "off")
 
@@ -1110,12 +1231,20 @@ p.riiv.T4 <- ggplot()+
 # Means
 ggarrange(p.type.GC, p.type.T3, p.type.T4, ncol=3)
 
-# ggsave("Figures/Figure4a-c.png", height=3.5, width=10, dpi=300)
+ ggsave("Figures/Figure4a-c.png", height=3.5, width=10, dpi=300)
 
 # rIIV
 ggarrange(p.riiv.GC, p.riiv.T3, p.riiv.T4, ncol=3)
 
 # ggsave("Figures/Figure4d-f.png", height=3.5, width=10, dpi=300)
+
+ggarrange(p.type.GC, p.type.T3, p.type.T4,
+          p.riiv.GC, p.riiv.T3, p.riiv.T4,
+          ncol=3, nrow=2,
+          labels = c("a", "b", "c", "d", "e", "f"),
+          label.x = 0.28)
+
+# ggsave("Figures/Figure4.png", width=10, height = 7, dpi=600)
 ```
 
 #  Test for correlation between rIIV and sample size
