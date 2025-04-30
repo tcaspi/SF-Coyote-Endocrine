@@ -59,7 +59,7 @@ ggplot(dhglm_df_GC, aes(x = Date, y = log(GC))) +
 scale_y_continuous(limits=c(1.5,7.5),
                    breaks=c(2,3,4,5,6,7))
 
-# ggsave("Figures/FigureS2.png", height = 6, width = 10, dpi=600)
+# ggsave("Figures/FigureS3.png", height = 6, width = 10, dpi=600)
 
 ggplot(df_date, aes(x = Date, y = log(T3))) +
   geom_point(size=2, alpha=0.5, fill="#FF7522", color="black", shape=21) +  
@@ -73,7 +73,7 @@ ggplot(df_date, aes(x = Date, y = log(T3))) +
 scale_y_continuous(limits=c(1.5,7.5),
                    breaks=c(2,3,4,5,6,7))
 
-# ggsave("Figures/FigureS3.png", height = 6, width = 10, dpi=600)
+# ggsave("Figures/FigureS4.png", height = 6, width = 10, dpi=600)
 
 ggplot(df_date, aes(x = Date, y = log(T4))) +
   geom_point(size=2, alpha=0.5, fill="#2D661C", color="black", shape=21) +  
@@ -87,4 +87,4 @@ ggplot(df_date, aes(x = Date, y = log(T4))) +
 scale_y_continuous(limits=c(1.5,7.5),
                    breaks=c(2,3,4,5,6,7))
 
-# ggsave("Figures/FigureS4.png", height = 6, width = 10, dpi=600)
+# ggsave("Figures/FigureS5.png", height = 6, width = 10, dpi=600)

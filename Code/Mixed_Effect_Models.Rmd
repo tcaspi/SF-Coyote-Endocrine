@@ -101,7 +101,7 @@ covariate_data <- glmm_df %>% select(all_of(covariate_columns)) %>%
 
 head(covariate_data)
 
-cor_matrix <- cor(covariate_data, use = "pairwise.complete.obs")
+cor_matrix <- cor(covariate_data, use = "pairwise.complete.obs", method="kendall")
 ggcorrplot(cor_matrix, 
            method = "square",
            type = "lower",    
@@ -1260,12 +1260,12 @@ cor.T3.riiv <- cor.test(corr.test.riiv.T3$n, corr.test.riiv.T3$meanrIIV)
 cor.T4.riiv <- cor.test(corr.test.riiv.T4$n, corr.test.riiv.T4$meanrIIV)
 
 # Extract r and p values for figures
-value_cor.GC.riiv <- paste0("r = ", round(cor.GC.riiv$estimate,2))
-value_p.GC.riiv <- paste0("p = ", round(cor.GC.riiv$p.value,2))
-value_cor.T3.riiv <- paste0("r = ", round(cor.T3.riiv$estimate,2))
-value_p.T3.riiv <- paste0("p = ", round(cor.T3.riiv$p.value,2))
-value_cor.T4.riiv <- paste0("r = ", round(cor.T4.riiv$estimate,2))
-value_p.T4.riiv <- paste0("p = ", round(cor.T4.riiv$p.value,2))
+value_cor.GC.riiv <- bquote(italic(r) == .(round(cor.GC.riiv$estimate, 2)))
+value_p.GC.riiv   <- bquote(italic(p) == .(round(cor.GC.riiv$p.value, 2)))
+value_cor.T3.riiv <- bquote(italic(r) == .(round(cor.T3.riiv$estimate, 2)))
+value_p.T3.riiv   <- bquote(italic(p) == .(round(cor.T3.riiv$p.value, 2)))
+value_cor.T4.riiv <- bquote(italic(r) == .(round(cor.T4.riiv$estimate, 2)))
+value_p.T4.riiv   <- bquote(italic(p) == .(round(cor.T4.riiv$p.value, 2)))
 
 # Plot correlations
 p.corr.GC <- ggplot(corr.test.riiv.GC, aes(x=n, y=meanrIIV))+
@@ -1313,7 +1313,7 @@ p.corr.T4 <- ggplot(corr.test.riiv.T4, aes(x=n, y=meanrIIV))+
 # Arrange plots
 ggarrange(p.corr.GC, p.corr.T3, p.corr.T4, nrow=1)
 
-# ggsave("Figures/FigureS5.png", dpi=600, height=2.5, width=8)
+# ggsave("Figures/FigureS6.png", dpi=600, height=2.5, width=8)
 ```
 
 

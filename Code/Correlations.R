@@ -69,12 +69,12 @@ summary(mod.corr.GC.T4)
 summary(mod.corr.T4.T3)
 
 # Extract r and p values for figures
-value_cor.GC.T3 <- paste0("r = ", round(cor.GC.T3$estimate,2))
-value_p.GC.T3 <- paste0("p = < 0.001")
-value_cor.GC.T4 <- paste0("r = ", round(cor.GC.T4$estimate,2))
-value_p.GC.T4 <- paste0("p = ", round(cor.GC.T4$p.value,2))
-value_cor.T4.T3 <- paste0("r = ", round(cor.T4.T3$estimate,2))
-value_p.T4.T3 <- paste0("p = < 0.001")
+value_cor.GC.T3 <- bquote(italic(r) == .(round(cor.GC.T3$estimate, 2)))
+value_p.GC.T3 <- expression(italic(p) < 0.001)
+value_cor.GC.T4 <- bquote(italic(r) == .(round(cor.GC.T4$estimate, 2)))
+value_p.GC.T4   <- bquote(italic(p) == .(round(cor.GC.T4$p.value, 2)))
+value_cor.T4.T3 <- bquote(italic(r) == .(round(cor.T4.T3$estimate, 2)))
+value_p.T4.T3   <- expression(italic(p) < 0.001)
 
 # Extract conditional effects
 cond_GC_T3 <- conditional_effects(mod.corr.GC.T3)
