@@ -1,0 +1,763 @@
+---
+title: "Within-Site-Centering"
+author: "Tali Caspi"
+date: "2025-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(tidyverse); library(brms); library(tidybayes); library(bayesplot); library(DHARMa.helpers); library(DHARMa); library(plotrix); library(parallel); library(coda); library(ggpubr); library(bayestestR); library(ggcorrplot); library(marginaleffects); library(purrr); library(glue)
+
+
+# Make custom theme
+theme_custom <- function() {
+  theme_default() +
+  theme(panel.grid.minor = element_blank(),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.title = element_text(size = 7),
+        strip.background = element_rect(fill = "grey80", color = NA),
+        axis.text.y = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        axis.title.y = element_text(size=10),
+        axis.title.x = element_text(size=10),
+        legend.background = element_rect(fill = "white", color = NA))}
+```
+
+# Prepare data
+
+This code joins the scat-level ISA values to the hormone and diet data, drops samples collected outside of established coyote territories, and calculates within-territory diet deviations.
+
+```{r}
+# Load data frames
+hormones_geno <- read.csv("Cleaned_Data/clean_hormone_genotypes_diet.csv")
+scat_isa <- read.csv("Cleaned_Data/scat_level_isa.csv")
+
+# Remove scats collected in non-established territories
+sites.to.drop <- c("Stern Grove", "Sunset Reservoir")
+
+# Create data frame for GLMM models (all samples with genotypes)
+glmm_df <- hormones_geno %>%
+  
+  # select only relevant data columns
+  select(c(SampleID, Individual, Sex, Breeder, Month, Biol.Season, Territory, Condition, Anthropogenic, GC, T3, T4)) %>% 
+  
+  # add environmental covariates
+  left_join(scat_isa, by="SampleID") %>% 
+  filter(!Territory %in% sites.to.drop) %>% 
+  
+  # add within-site centering
+  group_by(Territory) %>%
+  mutate(Anthro_mean = mean(Anthropogenic, na.rm=TRUE),
+         Anthro_within = Anthropogenic - Anthro_mean) %>%
+  ungroup()
+
+# make data frame for GC model without the NA from the outlier
+glmm_df_GC <- glmm_df %>% filter(SampleID != "S21_0009")
+```
+
+# Summary Statistics
+
+```{r}
+# Means, SD, and range
+glmm_df %>%
+  summarize(meanGC = round(mean(GC, na.rm = TRUE), 2),
+            sdGC = round(sd(GC, na.rm = TRUE), 2),
+            minGC = round(min(GC, na.rm=TRUE),2),
+            maxGC = round(max(GC, na.rm=TRUE),5),
+            meanT3 = round(mean(T3, na.rm = TRUE), 2),
+            sdT3 = round(sd(T3, na.rm = TRUE), 2),
+            minT3 = round(min(T3),2),
+            maxT3 = round(max(T3),6),
+            meanT4 = round(mean(T4, na.rm = TRUE), 2),
+            sdT4 = round(sd(T4, na.rm = TRUE), 2),
+            minT4 = round(min(T4),2),
+            maxT4 = round(max(T4),6)) %>% 
+    mutate(across(everything(), ~ sprintf("%.1f", .)))
+
+# Sex table
+glmm_df %>% distinct(Individual, Sex) %>% count(Sex) # 34 females, 40 males
+
+# Breeding status table
+glmm_df %>% distinct(Individual, Breeder) %>% count(Breeder) # 22 breeders, 52 non-breeders
+```
+
+# Construct Models
+
+Use `brms` to fit models. Models include: an interaction between biological season and sex, within-territory centered diet data, breeding status, scat-level impervious surface cover, and condition as fixed effects. Individual and territory are included as random random effects.
+
+```{r}
+my.cores <- detectCores()
+
+# GC
+glmm_GC_formula <- bf(GC ~ Biol.Season * Sex + scale(Anthro_within) + scale(imperv_prop_500m) + Breeder + Condition + (1 |Individual) + (1|Territory))
+
+mod.GC <- brm(glmm_GC_formula,
+                family="lognormal",
+                data   = glmm_df_GC, 
+                warmup = 2000, iter = 6000, thin=2,
+                chains = 4, 
+                seed = 666,
+                cores  = my.cores,
+                control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# test for interaction of diet with ISA
+glmm_GC_formula_int <- bf(GC ~ Biol.Season * Sex + scale(Anthro_within) * scale(imperv_prop_500m) + Breeder + Condition + (1 |Individual) + (1|Territory))
+
+mod.interact <- brm(glmm_GC_formula_int,
+                family="lognormal",
+                data   = glmm_df_GC, 
+                warmup = 2000, iter = 6000, thin=2,
+                chains = 4, 
+                seed = 666,
+                cores  = my.cores,
+                control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# interaction is NOT significant -> move forward with models not including interactive effects
+
+# T3
+glmm_T3_formula <- bf(T3 ~ Biol.Season * Sex + scale(Anthro_within) + scale(imperv_prop_500m) + Breeder + Condition + (1 |Individual) + (1|Territory))
+
+mod.T3 <- brm(glmm_T3_formula,
+                family="lognormal",
+                data   = glmm_df, 
+                warmup = 2000, iter = 6000, thin=2,
+                chains = 4, 
+                seed = 666,
+                cores  = my.cores,
+                control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# T4
+glmm_T4_formula <- bf(T4 ~ Biol.Season * Sex + scale(Anthro_within) + scale(imperv_prop_500m) + Breeder + Condition + (1 |Individual) + (1|Territory))
+
+mod.T4 <- brm(glmm_T4_formula,
+                family="lognormal",
+                data   = glmm_df, 
+                warmup = 2000, iter = 6000, thin=2,
+                chains = 4, 
+                seed = 666,
+                cores  = my.cores,
+                control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# Save models
+saveRDS(mod.GC, "Model_Output/mod.GC.rds")
+saveRDS(mod.T3, "Model_Output/mod.T3.rds")
+saveRDS(mod.T4, "Model_Output/mod.T4.rds")
+saveRDS(mod.interact, "Model_Output/mod.interact.rds")
+
+# Load models
+mod.GC <- readRDS("Model_Output/mod.GC.rds")
+mod.T3 <- readRDS("Model_Output/mod.T3.rds")
+mod.T4 <- readRDS("Model_Output/mod.T4.rds")
+```
+
+## Assess model fit
+
+```{r}
+# posterior predictive checks
+pp_check(mod.GC, ndraws=100)
+pp_check(mod.T3, ndraws=100)
+pp_check(mod.T4, ndraws=100)
+
+# dharma
+dh_check_brms(mod.GC)
+dh_check_brms(mod.T3)
+dh_check_brms(mod.T4)
+```
+
+## Calculate R2
+
+```{r}
+r2.GC <- performance::r2_bayes(mod.GC)
+r2.T3 <- performance::r2_bayes(mod.T3)
+r2.T4 <- performance::r2_bayes(mod.T4)
+
+r2.GC
+r2.T3
+r2.T4
+```
+
+## Extract Model Results
+
+```{r}
+models_GLMM <- list(
+    mod.GC = mod.GC,
+    mod.T3 = mod.T3,
+    mod.T4 = mod.T4
+  )
+  
+  # Function to summarize posterior estimates for GLMM models
+  summarize_posteriors_glmm <- function(model, model_name) {
+    posterior_estimates <- posterior_samples(model) 
+    posterior_estimates <- posterior_estimates[, 1:12]
+    
+    do.call(rbind, lapply(names(posterior_estimates), function(param) {
+      values <- posterior_estimates[[param]]
+      ci_vals <- bci(values, ci = 0.9)  # toggle sig level as needed
+      data.frame(
+        Model = model_name,
+        Effect = param,
+        Estimate = round(mean(values), 4),
+        lower = round(ci_vals$CI_low, 4),
+        upper = round(ci_vals$CI_high, 4)
+      )
+    }))
+  }
+  
+  # Loop through all models and combine results for GLMM models
+  glmm_results <- do.call(rbind, lapply(names(models_GLMM), function(model_name) {
+    summarize_posteriors_glmm(models_GLMM[[model_name]], model_name)
+  }))
+  
+  # Format and pivot results for GLMM models
+  glmm_results_clean <- glmm_results %>% 
+    group_by(Effect) %>% 
+    pivot_wider(
+      names_from = Model,
+      values_from = c(Estimate, lower, upper))
+  
+  # Define the custom order for the Effect column
+  custom_order <- c(
+    "b_Intercept",
+    "b_scaleAnthro_within",
+    "b_BreederYes",
+    "b_Conditionfresh",
+    "b_scaleimperv_prop_500m",
+    "b_Biol.SeasonMating",
+    "b_Biol.SeasonPupping",
+    "b_Biol.SeasonMating:SexMale",
+    "b_Biol.SeasonPupping:SexMale",
+    "b_SexMale",
+    "sd_Individual__Intercept",
+    "sd_Territory__Intercept")  
+  
+final_model_results <- glmm_results_clean %>% 
+    mutate(Effect = factor(Effect, levels = custom_order)) %>%
+    arrange(Effect) %>%
+    mutate(
+        GC = glue("{round(Estimate_mod.GC, 2)} [{round(lower_mod.GC, 2)}, {round(upper_mod.GC, 2)}]"),
+        T3 = glue("{round(Estimate_mod.T3, 2)} [{round(lower_mod.T3, 2)}, {round(upper_mod.T3, 2)}]"),
+        T4 = glue("{round(Estimate_mod.T4, 2)} [{round(lower_mod.T4, 2)}, {round(upper_mod.T4, 2)}]")
+    ) %>%
+    select(Effect, GC, T3, T4)
+
+View(final_model_results)
+
+# write to excel
+# write_xlsx(final_model_results, "Model_Output/full_model_results.xlsx")
+```
+
+# Repeatability
+
+```{r}
+
+# Variance Components - GC
+colnames(posterior_samples(mod.GC))[1:14]
+
+var_ind_GC <- posterior_samples(mod.GC)$"sd_Individual__Intercept"^2
+var_terr_GC <- posterior_samples(mod.GC)$"sd_Territory__Intercept"^2
+var_res_GC <- (posterior_samples(mod.GC)$"sigma")^2
+rpt_ind_GC <- var_ind_GC / (var_ind_GC + + var_terr_GC + var_res_GC)
+rpt_terr_GC <- var_terr_GC / (var_ind_GC + + var_terr_GC + var_res_GC)
+
+# Variance Components - T3
+var_ind_T3 <- posterior_samples(mod.T3)$"sd_Individual__Intercept"^2
+var_terr_T3 <- posterior_samples(mod.T3)$"sd_Territory__Intercept"^2
+var_res_T3 <- (posterior_samples(mod.T3)$"sigma")^2
+rpt_ind_T3 <- var_ind_T3 / (var_ind_T3 + + var_terr_T3 + var_res_T3)
+rpt_terr_T3 <- var_terr_T3 / (var_ind_T3 + + var_terr_T3 + var_res_T3)
+
+# Variance Components - T4
+var_ind_T4 <- posterior_samples(mod.T4)$"sd_Individual__Intercept"^2
+var_terr_T4 <- posterior_samples(mod.T4)$"sd_Territory__Intercept"^2
+var_res_T4 <- (posterior_samples(mod.T4)$"sigma")^2
+rpt_ind_T4 <- var_ind_T4 / (var_ind_T4 + + var_terr_T4 + var_res_T4)
+rpt_terr_T4 <- var_terr_T4 / (var_ind_T4 + + var_terr_T4 + var_res_T4)
+
+# Repeatability: individual 
+mean(rpt_ind_GC);ci(rpt_ind_GC, ci=0.9)
+mean(rpt_ind_T3);ci(rpt_ind_T3, ci=0.9)
+mean(rpt_ind_T4);ci(rpt_ind_T4, ci=0.9)
+
+# Repeatability: territory
+mean(rpt_terr_GC);ci(rpt_terr_GC, ci=0.9) 
+mean(rpt_terr_T3);ci(rpt_terr_T3, ci=0.9) 
+mean(rpt_terr_T4);ci(rpt_terr_T4, ci=0.9) 
+```
+
+# Average Marginal Contrasts and Pairwise Comparisons
+
+Use `avg_comparisons` function in the `marginaleffects` package to calculate average marginal contrasts and corresponding percent differences for each hormone at the following levels:
+
+-   Minimum vs maximum impervious surface area recorded in the study
+-   Minimum vs. maximum anthropogenic food recorded in the study (note that these values are within-territory centered and scaled, so they represent deviations)
+-   Non-breeders vs. breeders
+-   Sexes within each season
+-   Seasons within each sex
+
+*Change confidence level as needed between 0.95 and 0.90 to assess significance.*
+
+```{r}
+# Calculate observed ranges for ISA and diet covariates
+range(glmm_df$imperv_prop_500m) #0.1433071 0.8177232 (14% to 82% impervious cover)
+range(glmm_df$Anthro_within) # -0.7065731  0.7727237 (70% less vs. 77% more human food than territory average)
+
+# ============================================================
+# FUNCTION: Get percent difference comparisons with 90% CI all non-interactive covariates
+# ============================================================
+get_ratio_contrast <- function(model, variable, values, label, hormone_name) {
+  
+  comp <- avg_comparisons(
+    model,
+    variables = setNames(list(values), variable),
+    comparison = "ratio",
+    type = "response",
+    conf_level = 0.9 # set CI level
+  )
+  
+  data.frame(
+    Hormone = hormone_name,
+    Covariate = label,
+    Estimate = log(comp$estimate),  # put in log scale
+    Lower_90 = log(comp$conf.low),
+    Upper_90 = log(comp$conf.high),
+    Pct_Change = (comp$estimate - 1) * 100, # calc percent change
+    Lower_Pct = (comp$conf.low - 1) * 100,
+    Upper_Pct = (comp$conf.high - 1) * 100,
+     Significant = ifelse(
+      sign(comp$conf.low - 1) == sign(comp$conf.high - 1),
+      "Yes", "No"))
+}
+
+# ============================================================
+# FUNCTION: Get percent difference comparisons with 90% CI for pairwise comparisons within interactive effect (Season x Sex)
+# ============================================================
+get_int_contrasts <- function(model, hormone_name) {
+  
+  # sex within seasons
+  comp_sex <- avg_comparisons(
+    model,
+    variables = list(
+        Sex = c("Female", "Male")),
+    by = "Biol.Season",
+    comparison = "ratio",
+    type = "response", conf_level = 0.9)
+  
+  sex_contrasts <- data.frame(
+    Hormone = hormone_name,
+    Covariate = paste0(comp_sex$contrast[1], " (", comp_sex$Biol.Season, ")"),
+    Estimate = log(comp_sex$estimate),  # put in log scale
+    Lower_90 = log(comp_sex$conf.low),
+    Upper_90 = log(comp_sex$conf.high),
+    Pct_Change = (comp_sex$estimate - 1) * 100, # calc percent change
+    Lower_Pct = (comp_sex$conf.low - 1) * 100,
+    Upper_Pct = (comp_sex$conf.high - 1) * 100,
+     Significant = ifelse(
+      sign(comp_sex$conf.low - 1) == sign(comp_sex$conf.high - 1),
+      "Yes", "No"))
+  
+  # seasons within sex
+  comp_season <- avg_comparisons(
+  model,
+  variables = list(
+    Biol.Season = "pairwise"),
+  by = "Sex",
+  comparison = "ratio",
+  type = "response", conf_level = 0.9)
+  
+  season_contrasts <- data.frame(
+    Hormone = hormone_name,
+    Covariate = paste0(comp_season$contrast, " (", comp_season$Sex, ")"),
+    Estimate = log(comp_season$estimate),  # put in log scale
+    Lower_90 = log(comp_season$conf.low),
+    Upper_90 = log(comp_season$conf.high),
+    Pct_Change = (comp_season$estimate - 1) * 100, # calc percent change
+    Lower_Pct = (comp_season$conf.low - 1) * 100,
+    Upper_Pct = (comp_season$conf.high - 1) * 100,
+     Significant = ifelse(
+      sign(comp_season$conf.low - 1) == sign(comp_season$conf.high - 1),
+      "Yes", "No"))
+  
+  return(bind_rows(sex_contrasts, season_contrasts))
+}
+
+# ============================================================
+# FUNCTION: extract contrasts for all covariates a hormone
+# ============================================================
+get_all_contrasts_one_hormone <- function(model, hormone_name) {
+  
+  # Main effects (ISA, Anthropogenic Food, Breeder)
+  main_effects <- bind_rows(
+    get_ratio_contrast(model, "imperv_prop_500m", c("minmax"), 
+                      "ISA", hormone_name),
+    get_ratio_contrast(model, "Anthro_within", c("minmax"),
+                      "Anthropogenic Food", hormone_name),
+    get_ratio_contrast(model, "Breeder", c("No", "Yes"),
+                      "Breeder (Yes - No)", hormone_name)
+  )
+  
+  # Season × Sex contrasts
+  interaction_effects <- get_int_contrasts(model, hormone_name)
+  
+  # Combine
+  all_contrasts <- bind_rows(main_effects, interaction_effects)
+  
+  return(all_contrasts)
+}
+
+# ============================================================
+# Now extract contrasts for all hormones & format table
+# ============================================================
+
+all_contrasts <- bind_rows(
+  get_all_contrasts_one_hormone(mod.GC, "GC"),
+  get_all_contrasts_one_hormone(mod.T3, "T3"),
+  get_all_contrasts_one_hormone(mod.T4, "T4")
+)
+
+
+head(all_contrasts)
+
+# format results
+formatted_contrasts <-  all_contrasts %>%
+  mutate(
+    Combined = sprintf("%.2f [%.2f, %.2f]%s\n%.1f%% [%.1f%%, %.1f%%]",
+                      Estimate, Lower_90, Upper_90,
+                      ifelse(Significant == "Yes", "*", ""),
+                      Pct_Change, Lower_Pct, Upper_Pct)
+  ) %>%
+  select(Covariate, Hormone, Combined) %>%
+  pivot_wider(names_from = Hormone, values_from = Combined)
+
+head(formatted_contrasts)
+
+# save as excel file
+# write_xlsx(formatted_contrasts, "Model_Output/all_contrasts.xlsx")
+```
+
+# Plots
+
+## Within-Territory Effects of Diet
+
+```{r}
+# Get main conditional effects for Anthro_within (population-level)
+cond_GC_ID <- conditional_effects(mod.GC, effects = "Anthro_within", prob=0.9)
+cond_GC_ID <- data.frame(cond_GC_ID$Anthro_within)
+
+cond_T3_ID <- conditional_effects(mod.T3, effects = "Anthro_within", prob=0.9)
+cond_T3_ID <- data.frame(cond_T3_ID$Anthro_within)
+
+cond_T4_ID <- conditional_effects(mod.T4, effects = "Anthro_within", prob=0.9)
+cond_T4_ID <- data.frame(cond_T4_ID$Anthro_within)
+
+
+# Plot
+p.GC.within <- ggplot() +
+  # Raw data points and lines
+  geom_point(data = glmm_df_GC, aes(x = Anthro_within, y = log(GC), group = Territory), alpha = 0.5, color="grey") +
+  
+  geom_smooth(data = glmm_df_GC, aes(x = Anthro_within, y = log(GC), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
+  
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_GC_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.3) +
+  geom_line(data = cond_GC_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="dashed") +
+  # Graphics
+  labs(
+    x = NULL,
+    y = "Log Glucocorticoids (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01), breaks=c(-0.5,0,0.5)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+# Plot
+p.T3.within <- ggplot() +
+  # Raw data points and lines
+  geom_point(data = glmm_df, aes(x = Anthro_within, y = log(T3), group = Territory), alpha = 0.5, color="grey") +
+  
+  geom_smooth(data = glmm_df, aes(x = Anthro_within, y = log(T3), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
+  
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_T3_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.3) +
+  geom_line(data = cond_T3_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#FF7522", size = 1.5) +
+  # Graphics
+  labs(
+    x = NULL,
+    y = "Log Triiodothyronine (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01),breaks=c(-0.5,0,0.5)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+# Plot
+p.T4.within <- ggplot() +
+  # Raw data points and lines
+  geom_point(data = glmm_df, aes(x = Anthro_within, y = log(T4), group = Territory), alpha = 0.5, color="grey") +
+  
+  geom_smooth(data = glmm_df, aes(x = Anthro_within, y = log(T4), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
+  
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_T4_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.3) +
+  geom_line(data = cond_T4_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#2D661C", size = 1.5) +
+  # Graphics
+  labs(
+    x = "Proportion Anthropogenic Food \n (Within-Territory Centered)",
+    y = "Log Thyroxine (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01), breaks=c(-0.5,0,0.5)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+ggarrange(p.GC.within, p.T3.within, p.T4.within, nrow = 3, align = "hv")
+```
+
+## Impervious surface cover
+
+```{r}
+# Define a sequence of values for ISA from 0 to 100
+ISA_values <- seq(0, 1, by = 0.01) 
+int_conditions <- list(imperv_prop_500m = ISA_values)
+
+cond_GC_ISA <- conditional_effects(mod.GC, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_GC_ISA <- data.frame(cond_GC_ISA$imperv_prop_500m)
+
+cond_T3_ISA <- conditional_effects(mod.T3, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_T3_ISA <- data.frame(cond_T3_ISA$imperv_prop_500m)
+
+cond_T4_ISA <- conditional_effects(mod.T4, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_T4_ISA <- data.frame(cond_T4_ISA$imperv_prop_500m)
+
+# Plot
+p.GC.ISA <- ggplot() +
+  
+  # Raw data points and lines
+  geom_point(data = glmm_df_GC, aes(x = imperv_prop_500m, y = log(GC), group = Territory), alpha = 0.5, color="grey") +
+  
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_GC_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.3) +
+  geom_line(data = cond_GC_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="solid") +
+  # Graphics
+  labs(
+    x = NULL,
+    y = "Log Glucocorticoids (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+p.T3.ISA <- ggplot() +
+  # Raw data points and lines
+  geom_point(data = glmm_df, aes(x = imperv_prop_500m, y = log(T3), group = Territory), alpha = 0.5, color="grey") +
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_T3_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.3) +
+  geom_line(data = cond_T3_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#FF7522", size = 1.5, linetype="solid") +
+  # Graphics
+  labs(
+    x = NULL,
+    y = "Log Triiodothyronine (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+# Plot
+p.T4.ISA <- ggplot() +
+  # Raw data points and lines
+  geom_point(data = glmm_df, aes(x = imperv_prop_500m, y = log(T4), group = Territory), alpha = 0.5, color="grey") +
+  # Population-level model estimated effect line + ribbon
+  geom_ribbon(data = cond_T4_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.3) +
+  geom_line(data = cond_T4_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#2D661C", size = 1.5, linetype="solid") +
+  # Graphics
+  labs(
+    x = "Proportion Impervious Surface Cover \n",
+    y = "Log Thyroxine (ng/g)") +
+  scale_x_continuous(expand = c(0.001, 0.01)) +
+  scale_y_continuous(limits = c(1.5, 7.2), breaks = c(2, 3, 4, 5, 6, 7))+
+  theme_custom()
+
+ggarrange(p.GC.ISA, p.T3.ISA, p.T4.ISA, nrow = 3, align = "hv")
+```
+
+## Arrange all continuous effect plots
+
+```{r}
+ggarrange(p.GC.within, p.GC.ISA, 
+          p.T3.within, p.T3.ISA,
+          p.T4.within, p.T4.ISA,
+          ncol=2, nrow=3,
+          labels = c("a", "d", "b", "e", "c", "f"),
+          label.x = 0.14)
+
+# ggsave("Figures/all_cont_var.png", dpi=600, height=7, width=6)
+```
+
+## Categorical Effects: Breeding Status and Sex x Season
+
+```{r}
+# Extract conditional effects
+cond_breeder_GC_ID <- conditional_effects(mod.GC, effects="Breeder", prob=0.9)
+cond_breeder_T3_ID <- conditional_effects(mod.T3, effects="Breeder", prob=0.9)
+cond_breeder_T4_ID <- conditional_effects(mod.T4, effects="Breeder", prob=0.9)
+
+cond_breeder_GC_ID <- data.frame(cond_breeder_GC_ID$Breeder)
+cond_breeder_T3_ID <- data.frame(cond_breeder_T3_ID$Breeder)
+cond_breeder_T4_ID <- data.frame(cond_breeder_T4_ID$Breeder)
+
+p.GC_breeder <- ggplot(cond_breeder_GC_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = glmm_df_GC, aes(x = Breeder, y = log(GC), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#A4193D", "#CC7677"))+
+  scale_color_manual(values=c("#A4193D", "#CC7677"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
+  theme(legend.position = "none")
+
+p.T3_breeder <- ggplot(cond_breeder_T3_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = glmm_df, aes(x = Breeder, y = log(T3), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#FF7522", "#ffb27d"))+
+  scale_color_manual(values=c("#FF7522", "#ffb27d"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
+  theme(legend.position = "none")
+
+
+p.T4_breeder <- ggplot(cond_breeder_T4_ID, 
+                             aes(x = Breeder, y = log(estimate__),
+                                             group=Breeder, fill=Breeder)) +
+  
+  # add raw data
+  geom_jitter(data = glmm_df, aes(x = Breeder, y = log(T4), color=Breeder), 
+              alpha = 0.5, size=1, width=0.2)+
+  
+  # plot conditional estimates and SE
+  geom_point(size = 3, shape=21, color="black") +
+  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                width = 0.05, size = 0.5)+
+    # Graphics
+  xlab(NULL) +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values=c("#2D661C", "#55C235"))+
+  scale_color_manual(values=c("#2D661C", "#55C235"))+
+  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
+  theme(legend.position = "none")
+
+
+### SEX BY SEASON ###
+
+cond_GC_ID_month.sex <- conditional_effects(mod.GC, prob=0.9)[7]
+cond_GC_ID_month.sex <- data.frame(cond_GC_ID_month.sex$`Biol.Season:Sex`)
+cond_T3_ID_month.sex <- conditional_effects(mod.T3, prob=0.9)[7]
+cond_T3_ID_month.sex <- data.frame(cond_T3_ID_month.sex$`Biol.Season:Sex`)
+cond_T4_ID_month.sex <- conditional_effects(mod.T4, prob=0.9)[7]
+cond_T4_ID_month.sex <- data.frame(cond_T4_ID_month.sex$`Biol.Season:Sex`)
+
+# GC
+p.GC.int <- ggplot(cond_GC_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = glmm_df_GC, aes(x = Biol.Season, y = log(GC), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Glucocorticoids (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#A4193D", "#CC7677")) +
+    scale_color_manual(values = c("#A4193D", "#CC7677")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+    theme(legend.position = "none")
+
+# T3
+p.T3.int <- ggplot(cond_T3_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = glmm_df, aes(x = Biol.Season, y = log(T3), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Triiodothyronine (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#FF7522", "#ffb27d")) +
+    scale_color_manual(values = c("#FF7522", "#ffb27d")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+    theme(legend.position = "none")
+
+# T4
+p.T4.int <- ggplot(cond_T4_ID_month.sex, 
+                         aes(x = Biol.Season, y = log(estimate__), 
+                             group = Sex, fill = Sex)) + 
+    # Add raw data
+    geom_jitter(data = glmm_df, aes(x = Biol.Season, y = log(T4), 
+                                        color = Sex),  alpha = 0.5, size=1, 
+        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
+    
+    # Plot conditional estimates and SE
+    geom_point(size = 3, shape = 21, color = "black", 
+               position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
+                  width = 0.05, size = 0.5, 
+                  position = position_dodge(width = 0.4)) +
+    
+    # Graphics
+    xlab(NULL) +
+    ylab("Log Thyroxine (ng/g)") +
+    theme_custom() +
+    scale_fill_manual(values = c("#2D661C", "#55C235")) +
+    scale_color_manual(values = c("#2D661C", "#55C235")) +
+    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
+    theme(legend.position = "none")
+
+  
+## Arrange Plots ##
+ggarrange(p.GC_breeder, p.T3_breeder, p.T4_breeder,
+          p.GC.int, p.T3.int, p.T4.int, nrow=2, ncol=3,
+          labels = c("a", "b", "c", "d", "e", "f"),
+          label.x = 0.16)
+
+# ggsave("Figures/categorical.png", dpi=600, height=5, width=8)
+```

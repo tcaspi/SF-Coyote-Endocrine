@@ -1,0 +1,168 @@
+---
+title: "ISA_coyscat_buffers"
+output: html_document
+date: "2026-01-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sf); library(terra); library(tidyverse); library(mapview); library(tigris)
+```
+
+**Load in coordinates and create buffers**
+
+```{r}
+# load coordinates
+coords <- read.csv("Cleaned_Data/clean_hormone_genotypes_diet.csv") %>% 
+  select(SampleID, Lat, Long)
+
+# Convert to sf object
+pts <- st_as_sf(coords, coords = c("Long", "Lat"), crs = 4326)
+
+mapview(pts) # check
+
+# transform to UTM
+pts_proj <- st_transform(pts, "EPSG:32611")
+
+# take a look at it again
+mapview(pts_proj)
+st_crs(pts_proj) # check out our projection system 
+
+# create buffers
+buffer_500m <- st_buffer(pts_proj, dist = 500)
+buffer_1km <- st_buffer(pts_proj, dist = 1000)
+
+mapview(buffer_500m, col.regions="grey80")
+mapview(buffer_1km, col.regions="grey80")
+```
+
+**Load in impervious surface raster, crop to SF, and reproject**
+
+You must download the impervious surface raster from here: <https://www.mrlc.gov/data>. Download the 2021 Fractional Impervious Surface (CONUS) and save it on your own computer.
+
+```{r}
+# get land boundary
+sf_county <- counties(state = "CA", year = 2020) %>%
+  filter(NAME == "San Francisco" | NAME == "San Mateo") %>%
+  st_transform(32611)
+
+mapview(sf_county) # check
+
+# get water areas
+sf_water <- area_water(state = "CA", county = c("San Francisco", "San Mateo", "Marin"), year = 2020) %>%
+  st_transform(32611)
+
+mapview(sf_water) # check
+
+# load impervious surface area raster - replace with string to file on your own computer
+imperv_rast <- rast("../../../Postdoc/GitHub_Projects/bayarea-spatial-data/Data/Annual_NLCD_FctImp_2021_CU_C1V1/Annual_NLCD_FctImp_2021_CU_C1V1.tif")
+
+# create a bounding box around 1km buffers for cropping ISA raster
+bbox_buffers <- st_bbox(buffer_1km) %>%
+  st_as_sfc() %>%
+  st_buffer(1000)
+
+# transform bbox to raster's CRS
+bbox_raster_crs <- st_transform(bbox_buffers, crs(imperv_rast))
+
+# crop raster to size of bbox
+imperv_crop <- crop(imperv_rast, vect(bbox_raster_crs))
+
+# reproject cropped raster to match buffers
+imperv_utm <- project(imperv_crop, "EPSG:32611", method = "bilinear")
+
+plot(imperv_utm) # check
+```
+
+**Create masks to remove water from impervious surface area raster**
+
+```{r}
+# rasterize water polygons such that water pixels = 1, land pixels = NA
+water_vect <- vect(sf_water)
+water_rast <- rasterize(water_vect, imperv_utm)
+
+plot(water_rast) # check that water pixels are colored and land is not
+
+# create land mask such that land pixels = 1, water pixels = NA
+land_mask <- ifel(is.na(water_rast), 1, NA)
+
+plot(land_mask) # check that land pixels are colors and water is not
+
+# Mask impervious surface to land only: land pixels keep their ISA values, water pixels become NA
+imperv_land <- imperv_utm * land_mask
+
+plot(imperv_land) # check
+```
+
+**Calculate proportion of impervious surface area in each buffer**
+
+```{r}
+# write function to calculate mean impervious proportion
+calc_imperv_prop <- function(buffer_sf, raster, id_col) {
+  results <- data.frame(
+    SampleID = buffer_sf[[id_col]],
+    imperv_prop = NA,
+    total_land_pixels = NA,
+    mean_imperv_pct = NA,
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in 1:nrow(buffer_sf)) {
+    # Extract raster values within buffer
+    buf_vect <- vect(buffer_sf[i, ])
+    vals <- terra::extract(raster, buf_vect, fun = NULL, ID = FALSE)[[1]]
+    
+    # Remove NA values (water areas)
+    vals_land <- vals[!is.na(vals)]
+    
+    if (length(vals_land) > 0) {
+      # Calculate mean impervious surface
+      # NLCD values are 0-100 representing percent impervious
+      results$total_land_pixels[i] <- length(vals_land)
+      results$mean_imperv_pct[i] <- mean(vals_land)
+      results$imperv_prop[i] <- mean(vals_land) / 100  # Convert to 0-1 proportion
+    }
+  }
+  
+  return(results)
+}
+
+# calculate impervious proportions for both buffer sizes
+results_500m <- calc_imperv_prop(buffer_500m, imperv_land, id_col = "SampleID")
+results_1km <- calc_imperv_prop(buffer_1km, imperv_land, id_col = "SampleID")
+
+# rename columns based on buffer size
+names(results_500m)[2] <- "imperv_prop_500m"
+names(results_500m)[4] <- "mean_imperv_pct_500m"
+names(results_1km)[2] <- "imperv_prop_1km"
+names(results_1km)[4] <- "mean_imperv_pct_1km"
+
+# combine results
+final_results <- buffer_500m %>%
+  st_drop_geometry() %>%
+  select(SampleID) %>%
+  left_join(results_500m %>% select(SampleID, imperv_prop_500m, mean_imperv_pct_500m), by = "SampleID") %>%
+  left_join(results_1km %>% select(SampleID, imperv_prop_1km, mean_imperv_pct_1km), by = "SampleID")
+
+head(final_results) # check
+
+# write.csv(final_results, "Cleaned_Data/scat_level_isa.csv", row.names = F)
+
+# summarize ranges/means per territory
+
+summary_isa <- read.csv("Cleaned_Data/clean_hormone_genotypes_diet.csv") %>% 
+  select(SampleID, Territory) %>% 
+  left_join(final_results) %>% 
+  group_by(Territory) %>% 
+  summarize(
+    min_500m = min(mean_imperv_pct_500m),
+    max_500m = max(mean_imperv_pct_500m),
+    mean_500m = mean(mean_imperv_pct_500m),
+    min_1km = min(mean_imperv_pct_1km),
+    max_1km = max(mean_imperv_pct_1km),
+    mean_1km = mean(mean_imperv_pct_1km)
+  )
+
+summary_isa
+```

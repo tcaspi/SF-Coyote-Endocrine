@@ -12,12 +12,14 @@ library(tidyverse)
 library(lubridate)
 ```
 
+# Clean and format data for analysis
+
 Clean raw endocrine data by:
 
-1) Generating the original sample field IDs for merging with the environmental metadata
-2) Merging to the scat metadata and correct individual ID information
-3) Removing any non-coyote samples
-4) Joining diet data
+1)  Generating the original sample field IDs for merging with the environmental metadata
+2)  Merging to the scat metadata and correct individual ID information
+3)  Removing any non-coyote samples
+4)  Joining diet data
 
 ```{r}
 # Load hormone data and format dates
@@ -70,7 +72,7 @@ hormones_clean <- cleaned_data %>%
     Site == "MCLA" ~ "McLaren",
     Site == "PRES" ~ "Presidio",
     Site == "STFA" ~ "St. Francis",
-    Site == "SUNS" ~ "Sunset Res",
+    Site == "SUNS" ~ "Sunset Reservoir",
     Site == "STGV" ~ "Stern Grove")) %>% 
   mutate(Biol.Season = case_when(
     Month == 3 | Month == 4 | Month == 5 | Month == 6 ~ "Pupping",
@@ -102,9 +104,6 @@ diet <- read.csv("Data/func.RRA.clean.csv") %>%
 # Make data frame with all hormone samples and diet
 hormones_diet <- inner_join(hormones_clean, diet, by="SampleID")
 
-# Write to CSV
-# write.csv(hormones_diet, "Cleaned_Data/clean_hormone_all_diet.csv", row.names=F)
-
 # Make data frame of only samples with genotypes
 hormones_geno_diet <- hormones_clean %>% 
   filter(!is.na(Individual)) %>% 
@@ -115,7 +114,7 @@ hormones_geno_diet <- hormones_clean %>%
 # write.csv(hormones_geno_diet, "Cleaned_Data/clean_hormone_genotypes_diet.csv", row.names=F)
 ```
 
-# Summary Statistics
+# Total Samples
 
 ```{r}
 # Number of samples
@@ -126,29 +125,4 @@ nrow(hormones_geno_diet) # 318 samples of these samples have genotypes
 table(is.na(hormones_diet$GC)) # one outlier
 table(is.na(hormones_diet$T3)) # no outliers
 table(is.na(hormones_diet$T4)) # no outliers
-
-# Means, SD, and range
-hormones_diet %>%
-  summarize(meanGC = round(mean(GC, na.rm = TRUE), 2),
-            sdGC = round(sd(GC, na.rm = TRUE), 2),
-            minGC = round(min(GC, na.rm=TRUE),2),
-            maxGC = round(max(GC, na.rm=TRUE),5),
-            meanT3 = round(mean(T3, na.rm = TRUE), 2),
-            sdT3 = round(sd(T3, na.rm = TRUE), 2),
-            minT3 = round(min(T3),2),
-            maxT3 = round(max(T3),6),
-            meanT4 = round(mean(T4, na.rm = TRUE), 2),
-            sdT4 = round(sd(T4, na.rm = TRUE), 2),
-            minT4 = round(min(T4),2),
-            maxT4 = round(max(T4),6))
-
-# Sex table
-hormones_geno_diet %>% distinct(Individual, Sex) %>% count(Sex) # 34 females, 40 males
-
-# Breeding status table
-hormones_geno_diet %>% distinct(Individual, Breeder) %>% count(Breeder) # 22 breeders, 52 non-breeders
 ```
-
-
-
-
