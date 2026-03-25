@@ -55,7 +55,7 @@ In the `Data` folder, you will find a number of data files required for the anal
 | Sex | Sex of individual |
 | Breeder | Indicates whether or not individual is a breeder or non-breeder |
 
-`func.RRA.clean.csv`: diet metabarcoding data from Caspi *et al.* (2025) published in *Ecosphere* (doi: 10.1002/ecs2.70152).
+`func.RRA.clean.csv`: diet metabarcoding data from XXX *et al.* (2025) published in *XXX* (doi: XXX).
 
 | Column         | Description                                           |
 |----------------|-------------------------------------------------------|
