@@ -1,6 +1,6 @@
 # SF-Coyote-Endocrine
 
-This repository contains all raw data and scripts for the data analysis implemented in Caspi et al. (XXXX) titled: *Stress and thyroid hormones covary with urban intensity and diet in coyotes (Canis latrans)* and published in XXXXX.
+This repository contains all raw data and scripts for the data analysis implemented in XXXX et al. (XXXX) titled: *Stress and thyroid hormones covary with urban intensity and diet in coyotes (Canis latrans)* and published in XXXXX.
 
 Please find below a description of all raw and clean data sets and the scripts used to clean the raw data, run the models, and create the figures presented in the manuscript.
 
