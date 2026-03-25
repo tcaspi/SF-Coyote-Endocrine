@@ -136,20 +136,32 @@ value_r2.T4.T3 <- bquote("Marginal" ~ R^2 == .(round(r2_T4.T3$R2_Bayes_marginal,
 
 
 # Extract conditional effects
-cond_GC_T3 <- conditional_effects(mod.corr.GC.T3)
-cond_GC_T4 <- conditional_effects(mod.corr.GC.T4)
-cond_T4_T3 <- conditional_effects(mod.corr.T4.T3)
+cond_GC_T3_90 <- conditional_effects(mod.corr.GC.T3, prob = 0.90)
+cond_GC_T3_95 <- conditional_effects(mod.corr.GC.T3, prob = 0.95)
 
-cond_GC_T3 <- data.frame(cond_GC_T3$logT3)
-cond_GC_T4 <- data.frame(cond_GC_T4$logT4)
-cond_T4_T3 <- data.frame(cond_T4_T3$logT3)
+cond_GC_T4_90 <- conditional_effects(mod.corr.GC.T4, prob = 0.90)
+cond_GC_T4_95 <- conditional_effects(mod.corr.GC.T4, prob = 0.95)
+
+cond_T4_T3_90 <- conditional_effects(mod.corr.T4.T3, prob = 0.90)
+cond_T4_T3_95 <- conditional_effects(mod.corr.T4.T3, prob = 0.95)
+
+cond_GC_T3_90 <- data.frame(cond_GC_T3_90$logT3)
+cond_GC_T3_95 <- data.frame(cond_GC_T3_95$logT3)
+
+cond_GC_T4_90 <- data.frame(cond_GC_T4_90$logT4)
+cond_GC_T4_95 <- data.frame(cond_GC_T4_95$logT4)
+
+cond_T4_T3_90 <- data.frame(cond_T4_T3_90$logT3)
+cond_T4_T3_95 <- data.frame(cond_T4_T3_95$logT3)
 
 # Make plots
 p.corr.GC.T3 <- ggplot() +
   
-  geom_ribbon(data = cond_GC_T3, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  geom_ribbon(data = cond_GC_T3_95, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.2, fill = "#8C8076") +
   
-  geom_line(data = cond_GC_T3, aes(x = logT3, y = (estimate__)), color = "#2D2926", size = 1) +
+  geom_ribbon(data = cond_GC_T3_90, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  
+  geom_line(data = cond_GC_T3_90, aes(x = logT3, y = (estimate__)), color = "#2D2926", size = 1) +
   
   geom_point(data = cor.data, aes(x = logT3, y = logGC), color = "#2D2926", alpha = 0.3, size=1) +
   
@@ -162,14 +174,16 @@ p.corr.GC.T3 <- ggplot() +
                      expand = c(0, 0))+
   
   # Add annotation
-  annotate("text", x = 1.8, y = 7.4, label = value_slope.GC.T3, hjust = 0, size = 2.5) +
-  annotate("text", x = 1.8, y = 7.0, label = value_r2.GC.T3, hjust = 0, size = 2.5)
+  annotate("text", x = 1.8, y = 7.1, label = value_slope.GC.T3, hjust = 0, size = 2.5) +
+  annotate("text", x = 1.8, y = 6.7, label = value_r2.GC.T3, hjust = 0, size = 2.5)
 
 p.corr.GC.T4 <- ggplot() +
   
-  geom_ribbon(data = cond_GC_T4, aes(x = logT4, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  geom_ribbon(data = cond_GC_T4_95, aes(x = logT4, ymin = lower__, ymax = upper__), alpha = 0.2, fill = "#8C8076") +
   
-  geom_line(data = cond_GC_T4, aes(x = logT4, y = (estimate__)), color = "#2D2926", size = 1, linetype="dashed") +
+  geom_ribbon(data = cond_GC_T4_90, aes(x = logT4, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  
+  geom_line(data = cond_GC_T4_90, aes(x = logT4, y = (estimate__)), color = "#2D2926", size = 1, linetype="dashed") +
   
   geom_point(data = cor.data, aes(x = logT4, y = logGC), color = "#2D2926", alpha = 0.3, size=1) +
   
@@ -182,14 +196,16 @@ p.corr.GC.T4 <- ggplot() +
                      expand = c(0, 0))+
   
   # Add annotation
-  annotate("text", x = 1.8, y = 7.4, label = value_slope.GC.T4, hjust = 0, size = 2.5) +
-  annotate("text", x = 1.8, y = 7.0, label = value_r2.GC.T4, hjust = 0, size = 2.5)
+  annotate("text", x = 1.8, y = 7.1, label = value_slope.GC.T4, hjust = 0, size = 2.5) +
+  annotate("text", x = 1.8, y = 6.7, label = value_r2.GC.T4, hjust = 0, size = 2.5)
 
 p.corr.T4.T3 <- ggplot() +
   
-  geom_ribbon(data = cond_T4_T3, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  geom_ribbon(data = cond_T4_T3_95, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.2, fill = "#8C8076") +
   
-  geom_line(data = cond_T4_T3, aes(x = logT3, y = (estimate__)), color = "#2D2926", size = 1) +
+  geom_ribbon(data = cond_T4_T3_90, aes(x = logT3, ymin = lower__, ymax = upper__), alpha = 0.5, fill = "#8C8076") +
+  
+  geom_line(data = cond_T4_T3_90, aes(x = logT3, y = (estimate__)), color = "#2D2926", size = 1) +
   
   geom_point(data = cor.data, aes(x = logT3, y = logGC), color = "#2D2926", alpha = 0.3, size=1) +
   
@@ -202,11 +218,13 @@ p.corr.T4.T3 <- ggplot() +
                      expand = c(0, 0))+
   
   # Add annotation
-  annotate("text", x = 1.8, y = 7.4, label = value_slope.T4.T3, hjust = 0, size = 2.5) +
-  annotate("text", x = 1.8, y = 7.0, label = value_r2.T4.T3, hjust = 0, size = 2.5)
+  annotate("text", x = 1.8, y = 7.1, label = value_slope.T4.T3, hjust = 0, size = 2.5) +
+  annotate("text", x = 1.8, y = 6.7, label = value_r2.T4.T3, hjust = 0, size = 2.5)
 
 # Arrange figure
-ggarrange(p.corr.GC.T3, p.corr.GC.T4, p.corr.T4.T3, nrow=1)
+ggarrange(p.corr.GC.T3, p.corr.GC.T4, p.corr.T4.T3, nrow=1,
+          labels = c("a", "b", "c"),
+          label.x = 0.16, label.y=1.02)
 
 # ggsave("Figures/hormone_correlation_plots.png", dpi=600, height=2.5, width=8)
 

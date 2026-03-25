@@ -64,15 +64,15 @@ glmm_df_GC <- glmm_df %>% filter(SampleID != "S21_0009")
 # Means, SD, and range
 glmm_df %>%
   summarize(meanGC = round(mean(GC, na.rm = TRUE), 2),
-            sdGC = round(sd(GC, na.rm = TRUE), 2),
+            seGC = round(std.error(GC, na.rm = TRUE), 2),
             minGC = round(min(GC, na.rm=TRUE),2),
             maxGC = round(max(GC, na.rm=TRUE),5),
             meanT3 = round(mean(T3, na.rm = TRUE), 2),
-            sdT3 = round(sd(T3, na.rm = TRUE), 2),
+            seT3 = round(std.error(T3, na.rm = TRUE), 2),
             minT3 = round(min(T3),2),
             maxT3 = round(max(T3),6),
             meanT4 = round(mean(T4, na.rm = TRUE), 2),
-            sdT4 = round(sd(T4, na.rm = TRUE), 2),
+            seT4 = round(std.error(T4, na.rm = TRUE), 2),
             minT4 = round(min(T4),2),
             maxT4 = round(max(T4),6)) %>% 
     mutate(across(everything(), ~ sprintf("%.1f", .)))
@@ -443,14 +443,23 @@ head(formatted_contrasts)
 
 ```{r}
 # Get main conditional effects for Anthro_within (population-level)
-cond_GC_ID <- conditional_effects(mod.GC, effects = "Anthro_within", prob=0.9)
-cond_GC_ID <- data.frame(cond_GC_ID$Anthro_within)
+cond_GC_90 <- conditional_effects(mod.GC, effects = "Anthro_within", prob = 0.9) # 90% intervals
+cond_GC_90 <- data.frame(cond_GC_90$Anthro_within)
 
-cond_T3_ID <- conditional_effects(mod.T3, effects = "Anthro_within", prob=0.9)
-cond_T3_ID <- data.frame(cond_T3_ID$Anthro_within)
+cond_GC_95 <- conditional_effects(mod.GC, effects = "Anthro_within", prob = 0.95) # 95% intervals
+cond_GC_95 <- data.frame(cond_GC_95$Anthro_within)
 
-cond_T4_ID <- conditional_effects(mod.T4, effects = "Anthro_within", prob=0.9)
-cond_T4_ID <- data.frame(cond_T4_ID$Anthro_within)
+cond_T3_90 <- conditional_effects(mod.T3, effects = "Anthro_within", prob=0.9)
+cond_T3_90 <- data.frame(cond_T3_90$Anthro_within)
+
+cond_T3_95 <- conditional_effects(mod.T3, effects = "Anthro_within", prob=0.95)
+cond_T3_95 <- data.frame(cond_T3_95$Anthro_within)
+
+cond_T4_90 <- conditional_effects(mod.T4, effects = "Anthro_within", prob=0.9)
+cond_T4_90 <- data.frame(cond_T4_90$Anthro_within)
+
+cond_T4_95 <- conditional_effects(mod.T4, effects = "Anthro_within", prob=0.95)
+cond_T4_95 <- data.frame(cond_T4_95$Anthro_within)
 
 
 # Plot
@@ -460,9 +469,13 @@ p.GC.within <- ggplot() +
   
   geom_smooth(data = glmm_df_GC, aes(x = Anthro_within, y = log(GC), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
   
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_GC_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.3) +
-  geom_line(data = cond_GC_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="dashed") +
+  # 95% ribbon
+  geom_ribbon(data = cond_GC_95, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_GC_90, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.35) +
+  
+  geom_line(data = cond_GC_90, aes(x = Anthro_within, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="dashed") +
   # Graphics
   labs(
     x = NULL,
@@ -478,9 +491,12 @@ p.T3.within <- ggplot() +
   
   geom_smooth(data = glmm_df, aes(x = Anthro_within, y = log(T3), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
   
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_T3_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.3) +
-  geom_line(data = cond_T3_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#FF7522", size = 1.5) +
+  # 95% ribbon
+  geom_ribbon(data = cond_T3_95, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_T3_90, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.35)+
+  geom_line(data = cond_T3_90, aes(x = Anthro_within, y = log(estimate__)), color = "#FF7522", size = 1.5) +
   # Graphics
   labs(
     x = NULL,
@@ -496,9 +512,12 @@ p.T4.within <- ggplot() +
   
   geom_smooth(data = glmm_df, aes(x = Anthro_within, y = log(T4), group = Territory), color="grey", alpha = 0.7, size = 0.8, method="lm", se=F) +
   
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_T4_ID, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.3) +
-  geom_line(data = cond_T4_ID, aes(x = Anthro_within, y = log(estimate__)), color = "#2D661C", size = 1.5) +
+  # 95% ribbon
+  geom_ribbon(data = cond_T4_95, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_T4_90, aes(x = Anthro_within, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.35)+
+  geom_line(data = cond_T4_90, aes(x = Anthro_within, y = log(estimate__)), color = "#2D661C", size = 1.5) +
   # Graphics
   labs(
     x = "Proportion Anthropogenic Food \n (Within-Territory Centered)",
@@ -517,14 +536,24 @@ ggarrange(p.GC.within, p.T3.within, p.T4.within, nrow = 3, align = "hv")
 ISA_values <- seq(0, 1, by = 0.01) 
 int_conditions <- list(imperv_prop_500m = ISA_values)
 
-cond_GC_ISA <- conditional_effects(mod.GC, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
-cond_GC_ISA <- data.frame(cond_GC_ISA$imperv_prop_500m)
+cond_GC_ISA_90 <- conditional_effects(mod.GC, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_GC_ISA_90 <- data.frame(cond_GC_ISA_90$imperv_prop_500m)
 
-cond_T3_ISA <- conditional_effects(mod.T3, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
-cond_T3_ISA <- data.frame(cond_T3_ISA$imperv_prop_500m)
+cond_GC_ISA_95 <- conditional_effects(mod.GC, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.95)
+cond_GC_ISA_95 <- data.frame(cond_GC_ISA_95$imperv_prop_500m)
 
-cond_T4_ISA <- conditional_effects(mod.T4, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
-cond_T4_ISA <- data.frame(cond_T4_ISA$imperv_prop_500m)
+cond_T3_ISA_90 <- conditional_effects(mod.T3, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_T3_ISA_90 <- data.frame(cond_T3_ISA_90$imperv_prop_500m)
+
+cond_T3_ISA_95 <- conditional_effects(mod.T3, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.95)
+cond_T3_ISA_95 <- data.frame(cond_T3_ISA_95$imperv_prop_500m)
+
+cond_T4_ISA_90 <- conditional_effects(mod.T4, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.9)
+cond_T4_ISA_90 <- data.frame(cond_T4_ISA_90$imperv_prop_500m)
+
+cond_T4_ISA_95 <- conditional_effects(mod.T4, effects = "imperv_prop_500m", int_conditions = int_conditions, prob=0.95)
+cond_T4_ISA_95 <- data.frame(cond_T4_ISA_95$imperv_prop_500m)
+
 
 # Plot
 p.GC.ISA <- ggplot() +
@@ -532,9 +561,14 @@ p.GC.ISA <- ggplot() +
   # Raw data points and lines
   geom_point(data = glmm_df_GC, aes(x = imperv_prop_500m, y = log(GC), group = Territory), alpha = 0.5, color="grey") +
   
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_GC_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.3) +
-  geom_line(data = cond_GC_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="solid") +
+   # 95% ribbon
+  geom_ribbon(data = cond_GC_ISA_95, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_GC_ISA_90, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#CC7677", alpha = 0.35) +
+  
+  geom_line(data = cond_GC_ISA_90, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#A4193D", size = 1.5, linetype="solid")+
+  
   # Graphics
   labs(
     x = NULL,
@@ -546,9 +580,13 @@ p.GC.ISA <- ggplot() +
 p.T3.ISA <- ggplot() +
   # Raw data points and lines
   geom_point(data = glmm_df, aes(x = imperv_prop_500m, y = log(T3), group = Territory), alpha = 0.5, color="grey") +
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_T3_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.3) +
-  geom_line(data = cond_T3_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#FF7522", size = 1.5, linetype="solid") +
+ # 95% ribbon
+  geom_ribbon(data = cond_T3_ISA_95, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_T3_ISA_90, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#FFA15D", alpha = 0.35) +
+  
+  geom_line(data = cond_T3_ISA_90, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#FF7522", size = 1.5, linetype="solid")+
   # Graphics
   labs(
     x = NULL,
@@ -561,9 +599,13 @@ p.T3.ISA <- ggplot() +
 p.T4.ISA <- ggplot() +
   # Raw data points and lines
   geom_point(data = glmm_df, aes(x = imperv_prop_500m, y = log(T4), group = Territory), alpha = 0.5, color="grey") +
-  # Population-level model estimated effect line + ribbon
-  geom_ribbon(data = cond_T4_ISA, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.3) +
-  geom_line(data = cond_T4_ISA, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#2D661C", size = 1.5, linetype="solid") +
+  # 95% ribbon
+  geom_ribbon(data = cond_T4_ISA_95, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.15) +
+  
+  # 90% ribbon
+  geom_ribbon(data = cond_T4_ISA_90, aes(x = imperv_prop_500m, ymin = log(lower__), ymax = log(upper__)), fill = "#55C235", alpha = 0.35) +
+  
+  geom_line(data = cond_T4_ISA_90, aes(x = imperv_prop_500m, y = log(estimate__)), color = "#2D661C", size = 1.5, linetype="solid")+
   # Graphics
   labs(
     x = "Proportion Impervious Surface Cover \n",
@@ -592,165 +634,235 @@ ggarrange(p.GC.within, p.GC.ISA,
 
 ```{r}
 # Extract conditional effects
-cond_breeder_GC_ID <- conditional_effects(mod.GC, effects="Breeder", prob=0.9)
-cond_breeder_T3_ID <- conditional_effects(mod.T3, effects="Breeder", prob=0.9)
-cond_breeder_T4_ID <- conditional_effects(mod.T4, effects="Breeder", prob=0.9)
+cond_breeder_GC_90 <- conditional_effects(mod.GC, effects = "Breeder", prob = 0.9)
+cond_breeder_GC_95 <- conditional_effects(mod.GC, effects = "Breeder", prob = 0.95)
+cond_breeder_T3_90 <- conditional_effects(mod.T3, effects = "Breeder", prob = 0.9)
+cond_breeder_T3_95 <- conditional_effects(mod.T3, effects = "Breeder", prob = 0.95)
+cond_breeder_T4_90 <- conditional_effects(mod.T4, effects = "Breeder", prob = 0.9)
+cond_breeder_T4_95 <- conditional_effects(mod.T4, effects = "Breeder", prob = 0.95)
 
-cond_breeder_GC_ID <- data.frame(cond_breeder_GC_ID$Breeder)
-cond_breeder_T3_ID <- data.frame(cond_breeder_T3_ID$Breeder)
-cond_breeder_T4_ID <- data.frame(cond_breeder_T4_ID$Breeder)
+cond_breeder_GC_90 <- data.frame(cond_breeder_GC_90$Breeder)
+cond_breeder_GC_95 <- data.frame(cond_breeder_GC_95$Breeder)
+cond_breeder_T3_90 <- data.frame(cond_breeder_T3_90$Breeder)
+cond_breeder_T3_95 <- data.frame(cond_breeder_T3_95$Breeder)
+cond_breeder_T4_90 <- data.frame(cond_breeder_T4_90$Breeder)
+cond_breeder_T4_95 <- data.frame(cond_breeder_T4_95$Breeder)
 
-p.GC_breeder <- ggplot(cond_breeder_GC_ID, 
-                             aes(x = Breeder, y = log(estimate__),
-                                             group=Breeder, fill=Breeder)) +
-  
-  # add raw data
-  geom_jitter(data = glmm_df_GC, aes(x = Breeder, y = log(GC), color=Breeder), 
-              alpha = 0.5, size=1, width=0.2)+
-  
-  # plot conditional estimates and SE
-  geom_point(size = 3, shape=21, color="black") +
-  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                width = 0.05, size = 0.5)+
-    # Graphics
-  xlab(NULL) +
-  ylab("Log Glucocorticoids (ng/g)") +
-  theme_custom() +
-  scale_fill_manual(values=c("#A4193D", "#CC7677"))+
-  scale_color_manual(values=c("#A4193D", "#CC7677"))+
-  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
-  theme(legend.position = "none")
-
-p.T3_breeder <- ggplot(cond_breeder_T3_ID, 
-                             aes(x = Breeder, y = log(estimate__),
-                                             group=Breeder, fill=Breeder)) +
-  
-  # add raw data
-  geom_jitter(data = glmm_df, aes(x = Breeder, y = log(T3), color=Breeder), 
-              alpha = 0.5, size=1, width=0.2)+
-  
-  # plot conditional estimates and SE
-  geom_point(size = 3, shape=21, color="black") +
-  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                width = 0.05, size = 0.5)+
-    # Graphics
-  xlab(NULL) +
-  ylab("Log Triiodothyronine (ng/g)") +
-  theme_custom() +
-  scale_fill_manual(values=c("#FF7522", "#ffb27d"))+
-  scale_color_manual(values=c("#FF7522", "#ffb27d"))+
-  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
-  theme(legend.position = "none")
+p.GC_breeder <- ggplot() +
+    # Raw data points
+    geom_jitter(data = glmm_df_GC,
+                aes(x = Breeder, y = log(GC), color = Breeder),
+                alpha = 0.2, size = 1, width = 0.2) +
+    
+    # Outer 95% CI
+    geom_errorbar(data = cond_breeder_GC_95,
+                  aes(x = Breeder, ymin = log(lower__), ymax = log(upper__)),
+                  width = 0.04, size = 0.3, color="black") +
+    
+    # Inner 90% CI
+    geom_linerange(data = cond_breeder_GC_90,
+                   aes(x = Breeder, ymin = log(lower__), ymax = log(upper__), color=Breeder),
+                   size = 3, alpha = 1) +
+    
+    # Conditional effect points
+    geom_point(data = cond_breeder_GC_90,
+             aes(x = Breeder, y = log(estimate__)),
+             size = 1.2, shape = 21, fill = "black", color="black") +
+    
+    # Color scales
+    scale_color_manual(values = c("#A4193D", "#CC7677")) +
+    scale_fill_manual(values = c("#A4193D", "#CC7677")) +
+    ylab("Log Glucocorticoids (ng/g)") +
+    scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
+    theme_custom() +
+    theme(legend.position = "none")
 
 
-p.T4_breeder <- ggplot(cond_breeder_T4_ID, 
-                             aes(x = Breeder, y = log(estimate__),
-                                             group=Breeder, fill=Breeder)) +
-  
-  # add raw data
-  geom_jitter(data = glmm_df, aes(x = Breeder, y = log(T4), color=Breeder), 
-              alpha = 0.5, size=1, width=0.2)+
-  
-  # plot conditional estimates and SE
-  geom_point(size = 3, shape=21, color="black") +
-  geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                width = 0.05, size = 0.5)+
-    # Graphics
-  xlab(NULL) +
-  ylab("Log Thyroxine (ng/g)") +
-  theme_custom() +
-  scale_fill_manual(values=c("#2D661C", "#55C235"))+
-  scale_color_manual(values=c("#2D661C", "#55C235"))+
-  scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-   scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding"))+
-  theme(legend.position = "none")
+p.T3_breeder <- ggplot() +
+    # Raw data points
+    geom_jitter(data = glmm_df,
+                aes(x = Breeder, y = log(T3), color = Breeder),
+                alpha = 0.2, size = 1, width = 0.2) +
+    
+    # Outer 95% CI
+    geom_errorbar(data = cond_breeder_T3_95,
+                  aes(x = Breeder, ymin = log(lower__), ymax = log(upper__)),
+                  width = 0.04, size = 0.3, color="black") +
+    
+    # Inner 90% CI
+    geom_linerange(data = cond_breeder_T3_90,
+                   aes(x = Breeder, ymin = log(lower__), ymax = log(upper__), color=Breeder),
+                   size = 3, alpha = 1) +
+    
+    # Conditional effect points
+    geom_point(data = cond_breeder_T3_90,
+             aes(x = Breeder, y = log(estimate__)),
+             size = 1.2, shape = 21, fill = "black", color="black") +
+    
+  # Color scales
+    scale_color_manual(values = c("#FF7522", "#FFA15D")) +
+    scale_fill_manual(values = c("#FF7522", "#FFA15D")) +
+    ylab("Log Triiodothyronine (ng/g)") +
+    scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
+    theme_custom() +
+    theme(legend.position = "none")
+
+p.T4_breeder <- ggplot() +
+    # Raw data points
+    geom_jitter(data = glmm_df,
+                aes(x = Breeder, y = log(T4), color = Breeder),
+                alpha = 0.2, size = 1, width = 0.2) +
+    
+    # Outer 95% CI
+    geom_errorbar(data = cond_breeder_T4_95,
+                  aes(x = Breeder, ymin = log(lower__), ymax = log(upper__)),
+                  width = 0.04, size = 0.3, color="black") +
+    
+    # Inner 90% CI
+    geom_linerange(data = cond_breeder_T4_90,
+                   aes(x = Breeder, ymin = log(lower__), ymax = log(upper__), color=Breeder), size = 3, alpha = 1) +
+    
+    # Conditional effect points
+    geom_point(data = cond_breeder_T4_90,
+             aes(x = Breeder, y = log(estimate__)),
+             size = 1.2, shape = 21, fill = "black", color="black") +
+    
+  # Color scales
+    scale_color_manual(values = c("#2D661C", "#55C235")) +
+    scale_fill_manual(values = c("#2D661C", "#55C235")) +
+    ylab("Log Thyroxine (ng/g)") +
+    scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
+    theme_custom() +
+    theme(legend.position = "none")
 
 
 ### SEX BY SEASON ###
 
-cond_GC_ID_month.sex <- conditional_effects(mod.GC, prob=0.9)[7]
-cond_GC_ID_month.sex <- data.frame(cond_GC_ID_month.sex$`Biol.Season:Sex`)
-cond_T3_ID_month.sex <- conditional_effects(mod.T3, prob=0.9)[7]
-cond_T3_ID_month.sex <- data.frame(cond_T3_ID_month.sex$`Biol.Season:Sex`)
-cond_T4_ID_month.sex <- conditional_effects(mod.T4, prob=0.9)[7]
-cond_T4_ID_month.sex <- data.frame(cond_T4_ID_month.sex$`Biol.Season:Sex`)
+cond_GC_ID_month.sex_90 <- conditional_effects(mod.GC, prob=0.9)[7]
+cond_T3_ID_month.sex_90 <- conditional_effects(mod.T3, prob=0.9)[7]
+cond_T4_ID_month.sex_90 <- conditional_effects(mod.T4, prob=0.9)[7]
+cond_GC_ID_month.sex_95 <- conditional_effects(mod.GC, prob=0.95)[7]
+cond_T3_ID_month.sex_95 <- conditional_effects(mod.T3, prob=0.95)[7]
+cond_T4_ID_month.sex_95 <- conditional_effects(mod.T4, prob=0.95)[7]
+
+cond_GC_ID_month.sex_90 <- data.frame(cond_GC_ID_month.sex_90$`Biol.Season:Sex`)
+cond_T3_ID_month.sex_90 <- data.frame(cond_T3_ID_month.sex_90$`Biol.Season:Sex`)
+cond_T4_ID_month.sex_90 <- data.frame(cond_T4_ID_month.sex_90$`Biol.Season:Sex`)
+cond_GC_ID_month.sex_95 <- data.frame(cond_GC_ID_month.sex_95$`Biol.Season:Sex`)
+cond_T3_ID_month.sex_95 <- data.frame(cond_T3_ID_month.sex_95$`Biol.Season:Sex`)
+cond_T4_ID_month.sex_95 <- data.frame(cond_T4_ID_month.sex_95$`Biol.Season:Sex`)
+
+pd <- position_dodge(width = 0.4)
 
 # GC
-p.GC.int <- ggplot(cond_GC_ID_month.sex, 
-                         aes(x = Biol.Season, y = log(estimate__), 
-                             group = Sex, fill = Sex)) + 
-    # Add raw data
-    geom_jitter(data = glmm_df_GC, aes(x = Biol.Season, y = log(GC), 
-                                        color = Sex),  alpha = 0.5, size=1, 
-        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
-    
-    # Plot conditional estimates and SE
-    geom_point(size = 3, shape = 21, color = "black", 
-               position = position_dodge(width = 0.4)) +
-    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                  width = 0.05, size = 0.5, 
-                  position = position_dodge(width = 0.4)) +
-    
-    # Graphics
-    xlab(NULL) +
-    ylab("Log Glucocorticoids (ng/g)") +
-    theme_custom() +
-    scale_fill_manual(values = c("#A4193D", "#CC7677")) +
-    scale_color_manual(values = c("#A4193D", "#CC7677")) +
-    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-    theme(legend.position = "none")
+
+p.GC.int <- ggplot() +
+  # Raw data
+  geom_jitter(data = glmm_df_GC,
+              aes(x = Biol.Season, y = log(GC), color = Sex),
+              alpha = 0.2, size = 1,
+              position = position_jitterdodge(jitter.width = 0.2,
+                                              dodge.width = 0.4)) +
+
+  # Outer 95% CI
+  geom_errorbar(data = cond_GC_ID_month.sex_95,
+                aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                    group = Sex),
+                width = 0.04, size = 0.3, color = "black",
+                position = pd) +
+
+  # Inner 90% CI
+  geom_linerange(data = cond_GC_ID_month.sex_90,
+                 aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                     group = Sex, color = Sex),
+                 size = 3, alpha = 1, position = pd)+
+
+  # Point estimates
+  geom_point(data = cond_GC_ID_month.sex_90,
+             aes(x = Biol.Season, y = log(estimate__), group=Sex),
+             size = 1.2, shape = 21, fill = "black", color = "black", position = pd) +
+
+  xlab(NULL) +
+  ylab("Log Glucocorticoids (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values = c("#A4193D", "#CC7677")) +
+  scale_color_manual(values = c("#A4193D", "#CC7677")) +
+  scale_y_continuous(limits = c(1.5, 7.5),
+                     breaks = c(2, 3, 4, 5, 6, 7)) +
+  theme(legend.position = "none")
+
 
 # T3
-p.T3.int <- ggplot(cond_T3_ID_month.sex, 
-                         aes(x = Biol.Season, y = log(estimate__), 
-                             group = Sex, fill = Sex)) + 
-    # Add raw data
-    geom_jitter(data = glmm_df, aes(x = Biol.Season, y = log(T3), 
-                                        color = Sex),  alpha = 0.5, size=1, 
-        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
-    
-    # Plot conditional estimates and SE
-    geom_point(size = 3, shape = 21, color = "black", 
-               position = position_dodge(width = 0.4)) +
-    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                  width = 0.05, size = 0.5, 
-                  position = position_dodge(width = 0.4)) +
-    
-    # Graphics
-    xlab(NULL) +
-    ylab("Log Triiodothyronine (ng/g)") +
-    theme_custom() +
-    scale_fill_manual(values = c("#FF7522", "#ffb27d")) +
-    scale_color_manual(values = c("#FF7522", "#ffb27d")) +
-    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-    theme(legend.position = "none")
+p.T3.int <- ggplot() +
+  # Raw data
+  geom_jitter(data = glmm_df,
+              aes(x = Biol.Season, y = log(T3), color = Sex),
+              alpha = 0.2, size = 1,
+              position = position_jitterdodge(jitter.width = 0.2,
+                                              dodge.width = 0.4)) +
+
+  # Outer 95% CI
+  geom_errorbar(data = cond_T3_ID_month.sex_95,
+                aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                    group = Sex),
+                width = 0.04, size = 0.3, color = "black",
+                position = pd) +
+
+  # Inner 90% CI
+  geom_linerange(data = cond_T3_ID_month.sex_90,
+                 aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                     group = Sex, color = Sex),
+                 size = 3, alpha = 1, position = pd)+
+
+  # Point estimates
+  geom_point(data = cond_T3_ID_month.sex_90,
+             aes(x = Biol.Season, y = log(estimate__), group=Sex),
+             size = 1.2, shape = 21, fill = "black", color = "black", position = pd) +
+
+  xlab(NULL) +
+  ylab("Log Triiodothyronine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values = c("#FF7522", "#FFA15D")) +
+  scale_color_manual(values = c("#FF7522", "#FFA15D")) +
+  scale_y_continuous(limits = c(1.5, 7.5),
+                     breaks = c(2, 3, 4, 5, 6, 7)) +
+  theme(legend.position = "none")
 
 # T4
-p.T4.int <- ggplot(cond_T4_ID_month.sex, 
-                         aes(x = Biol.Season, y = log(estimate__), 
-                             group = Sex, fill = Sex)) + 
-    # Add raw data
-    geom_jitter(data = glmm_df, aes(x = Biol.Season, y = log(T4), 
-                                        color = Sex),  alpha = 0.5, size=1, 
-        position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.4)) +
-    
-    # Plot conditional estimates and SE
-    geom_point(size = 3, shape = 21, color = "black", 
-               position = position_dodge(width = 0.4)) +
-    geom_errorbar(aes(ymin = log(lower__), ymax = log(upper__)), 
-                  width = 0.05, size = 0.5, 
-                  position = position_dodge(width = 0.4)) +
-    
-    # Graphics
-    xlab(NULL) +
-    ylab("Log Thyroxine (ng/g)") +
-    theme_custom() +
-    scale_fill_manual(values = c("#2D661C", "#55C235")) +
-    scale_color_manual(values = c("#2D661C", "#55C235")) +
-    scale_y_continuous(limits = c(1.5, 7.5), breaks = c(2, 3, 4, 5, 6, 7)) +
-    theme(legend.position = "none")
+p.T4.int <- ggplot() +
+  # Raw data
+  geom_jitter(data = glmm_df,
+              aes(x = Biol.Season, y = log(T4), color = Sex),
+              alpha = 0.2, size = 1,
+              position = position_jitterdodge(jitter.width = 0.2,
+                                              dodge.width = 0.4)) +
+
+  # Outer 95% CI
+  geom_errorbar(data = cond_T4_ID_month.sex_95,
+                aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                    group = Sex),
+                width = 0.04, size = 0.3, color = "black",
+                position = pd) +
+
+  # Inner 90% CI
+  geom_linerange(data = cond_T4_ID_month.sex_90,
+                 aes(x = Biol.Season, ymin = log(lower__), ymax = log(upper__),
+                     group = Sex, color = Sex),
+                 size = 3, alpha = 1, position = pd)+
+
+  # Point estimates
+  geom_point(data = cond_T4_ID_month.sex_90,
+             aes(x = Biol.Season, y = log(estimate__), group=Sex),
+             size = 1.2, shape = 21, fill = "black", color = "black", position = pd) +
+
+  xlab(NULL) +
+  ylab("Log Thyroxine (ng/g)") +
+  theme_custom() +
+  scale_fill_manual(values = c("#2D661C", "#55C235")) +
+  scale_color_manual(values = c("#2D661C", "#55C235")) +
+  scale_y_continuous(limits = c(1.5, 7.5),
+                     breaks = c(2, 3, 4, 5, 6, 7)) +
+  theme(legend.position = "none")
 
   
 ## Arrange Plots ##

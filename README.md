@@ -1,30 +1,30 @@
 # SF-Coyote-Endocrine
 
-This repository contains all raw data, plots and scripts for the data analysis implemented in Caspi et al. (XXXX) titled: *Coordinated stress and metabolic responses may facilitate coyote persistence in cities* and published in XXXXX.
+This repository contains all raw data and scripts for the data analysis implemented in Caspi et al. (XXXX) titled: *Stress and thyroid hormones covary with urban intensity and diet in coyotes (Canis latrans)* and published in XXXXX.
 
 Please find below a description of all raw and clean data sets and the scripts used to clean the raw data, run the models, and create the figures presented in the manuscript.
 
 ## Data Files
 
-In the `Data` folder, you will find a number of files:
+In the `Data` folder, you will find a number of data files required for the analyses completed in this study.
 
-`Hormone_Data.csv`
-
-| Column    | Description                                              |
-|-----------|----------------------------------------------------------|
-| Code      | Unique identifier used by endocrine lab                  |
-| Collector | Initials of person who collected the sample in the field |
-| Number    | Field ID sample number                                   |
-| Date      | Date of sample collection                                |
-| Bag       | Bag number sample was shipped in                         |
-| T3        | T3 concentration (ng/g)                                  |
-| T4        | T4 concentration (ng/g)                                  |
-| GC        | GC concentration (ng/g)                                  |
-
-`All_Metadata.csv`
+`Hormone_Data.csv`: hormone metabolite concentration data.
 
 | Column | Description |
-|-----------------|-------------------------------------------------------|
+|------------------------------------|------------------------------------|
+| Code | Unique identifier used by endocrine lab |
+| Collector | Initials of person who collected the sample in the field |
+| Number | Field ID sample number |
+| Date | Date of sample collection |
+| Bag | Bag number sample was shipped in |
+| T3 | T3 concentration (ng/g); *NA* values indicate missing values (no data recorded) |
+| T4 | T4 concentration (ng/g); *NA* values indicate missing values (no data recorded) |
+| GC | GC concentration (ng/g); *NA* values indicate missing values (no data recorded) |
+
+`All_Metadata.csv`: sample metadata and species identification.
+
+| Column | Description |
+|------------------------------------|------------------------------------|
 | SampleID | Unique identifier for DNA sample |
 | Replicate | Indicates whether the sample was a replicate extraction or not |
 | FieldID | Unique identifier for the sample when collected in the field |
@@ -35,27 +35,27 @@ In the `Data` folder, you will find a number of files:
 | Month | Month sample was collected |
 | Day | Day sample was collected |
 | Condition | Condition of sample at time of collection |
-| Lat | Latitude |
-| Long | Longitude |
-| Geno.Sp | Species identification from genotyping |
-| Cytb_Sp | Species identification from Cytochrome b analysis |
+| Lat | Latitude; *NA* values indicate missing location data |
+| Long | Longitude; *NA* values indicate missing location data |
+| Geno.Sp | Species identification from genotyping; *NA* values indicate sample was not genotyped |
+| Cytb_Sp | Species identification from Cytochrome b analysis; *NA* values indicate Cytochrome b analyses were not performed on sample |
 
-`Individual_IDs.csv`
+`Individual_IDs.csv`: individual identification.
 
 | Column     | Description                                       |
 |------------|---------------------------------------------------|
 | SampleID   | Unique identifier for DNA Sample                  |
 | Individual | Label for individual coyote sample is assigned to |
 
-`Family_Data.csv`
+`Family_Data.csv`: sex and breeding status information.
 
 | Column | Description |
-|-----------------|-------------------------------------------------------|
+|------------------------------------|------------------------------------|
 | Individual | Label for individual coyote sample is assigned to |
 | Sex | Sex of individual |
 | Breeder | Indicates whether or not individual is a breeder or non-breeder |
 
-`func.RRA.clean.csv`
+`func.RRA.clean.csv`: diet metabarcoding data from Caspi *et al.* (2025) published in *Ecosphere* (doi: 10.1002/ecs2.70152).
 
 | Column         | Description                                           |
 |----------------|-------------------------------------------------------|
@@ -69,7 +69,7 @@ In the `Data` folder, you will find a number of files:
 
 ## Scripts
 
-The scripts for the full workflow are available as R and Rmd files in the `Code` folder. All files are R scripts that were run in R version 4.2.1. The output of the models are not stored on github due to the large file sizes, but can be generated on your own device, or are available on Dryad Digital Repository (doi: XXXX).
+The scripts for the full workflow are available as R and Rmd files in the `Code` folder. All files are R scripts that were run in R version 4.2.1.
 
 -   `Clean_Data.Rmd`: this script takes the raw hormone data and cleans and formats the data for statistical analyses and data visualization.
 
@@ -83,7 +83,7 @@ The scripts for the full workflow are available as R and Rmd files in the `Code
 
 ## Cleaned Data
 
-In the `Cleaned_Data` folder, you will find a number of cleaned up files that are generated w ithin the R scripts described above.
+In the `Cleaned_Data` folder, you will find a number of cleaned up files that are generated within some of the R scripts contained in the `Code` folder (described below). These cleaned data files are required in some of scripts.
 
 Cleaned raw data:
 
@@ -93,11 +93,11 @@ Cleaned raw data:
 
 ## Model Output
 
-The output of the models are not stored on GitHub due to the large file sizes, but can be generated on your own device, or are available on Dryad Digital Repository (doi: XXXX).
+The output of the models can be generated on your own device or are available to download from within the `Model_Output` folder.
 
--   `mod.GC.rds`, `mod.T3.rds`, `mod.T4.rds`, and `mod.interact.rds`: model output for the GLMMs
+-   `mod.GC.rds`, `mod.T3.rds`, `mod.T4.rds`, and `mod.interact.rds`: model output for the GLMMs assessing the effects of diet, impervious surface cover, and life history traits on fecal hormone metabolite concentrations.
 
--   `mod.corr.GC.T3.rds`, `mod.corr.GC.T4.rds`, and `mod.corr.T4.T3.rds`: model output for the models assessing correlations between each pair of hormones
+-   `mod.corr.GC.T3.rds`, `mod.corr.GC.T4.rds`, and `mod.corr.T4.T3.rds`: model output for models assessing associations between each pair of hormones.
 
 ## Figures
 
