@@ -11,7 +11,7 @@ In the `Data` folder, you will find a number of data files required for the anal
 `Hormone_Data.csv`: hormone metabolite concentration data.
 
 | Column | Description |
-|------------------------------------|------------------------------------|
+|----|----|
 | Code | Unique identifier used by endocrine lab |
 | Collector | Initials of person who collected the sample in the field |
 | Number | Field ID sample number |
@@ -24,7 +24,7 @@ In the `Data` folder, you will find a number of data files required for the anal
 `All_Metadata.csv`: sample metadata and species identification.
 
 | Column | Description |
-|------------------------------------|------------------------------------|
+|----|----|
 | SampleID | Unique identifier for DNA sample |
 | Replicate | Indicates whether the sample was a replicate extraction or not |
 | FieldID | Unique identifier for the sample when collected in the field |
@@ -50,7 +50,7 @@ In the `Data` folder, you will find a number of data files required for the anal
 `Family_Data.csv`: sex and breeding status information.
 
 | Column | Description |
-|------------------------------------|------------------------------------|
+|----|----|
 | Individual | Label for individual coyote sample is assigned to |
 | Sex | Sex of individual |
 | Breeder | Indicates whether or not individual is a breeder or non-breeder |

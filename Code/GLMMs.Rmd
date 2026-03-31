@@ -673,6 +673,7 @@ p.GC_breeder <- ggplot() +
     scale_color_manual(values = c("#A4193D", "#CC7677")) +
     scale_fill_manual(values = c("#A4193D", "#CC7677")) +
     ylab("Log Glucocorticoids (ng/g)") +
+    xlab(NULL)+
     scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
     theme_custom() +
     theme(legend.position = "none")
@@ -703,6 +704,7 @@ p.T3_breeder <- ggplot() +
     scale_color_manual(values = c("#FF7522", "#FFA15D")) +
     scale_fill_manual(values = c("#FF7522", "#FFA15D")) +
     ylab("Log Triiodothyronine (ng/g)") +
+    xlab(NULL)+
     scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
     theme_custom() +
     theme(legend.position = "none")
@@ -731,6 +733,7 @@ p.T4_breeder <- ggplot() +
     scale_color_manual(values = c("#2D661C", "#55C235")) +
     scale_fill_manual(values = c("#2D661C", "#55C235")) +
     ylab("Log Thyroxine (ng/g)") +
+    xlab(NULL)+
     scale_x_discrete(labels = c("Yes" = "Breeding", "No" = "Non-Breeding")) +
     theme_custom() +
     theme(legend.position = "none")
